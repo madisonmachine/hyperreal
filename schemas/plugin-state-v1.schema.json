@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hyperreal.local/schemas/plugin-state-v1.schema.json",
+  "title": "HYPERREAL project state v1 draft",
+  "type": "object",
+  "required": ["schemaVersion", "kit", "hostParameters"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kit": { "$ref": "kit-v1.schema.json" },
+    "hostParameters": {
+      "type": "object",
+      "additionalProperties": { "type": "number" }
+    },
+    "embeddedMedia": { "type": "object" }
+  },
+  "additionalProperties": false
+}

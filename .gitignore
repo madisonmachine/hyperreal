@@ -1,0 +1,17 @@
+/build/
+/cmake-build-*/
+/.vs/
+/.idea/
+/node_modules/
+/dist/
+/.cache/
+/tools/
+/vendor/
+*.user
+*.suo
+*.pdb
+*.ilk
+*.obj
+*.tlog
+*.lastbuildstate
+.DS_Store

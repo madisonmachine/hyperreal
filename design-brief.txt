@@ -1,0 +1,590 @@
+# HYPERREAL — DESIGN SPECIFICATIONS
+Version 1.1 | 13 November 2026
+
+## 1. Design Vision
+
+HYPERREAL is a compact, low-latency, 16-pad drum sampler VST designed to resemble a premium electronic drum machine from the 1990s.
+
+The visual experience should evoke physical studio hardware, combining tactile controls, vintage electronic displays, illuminated buttons, industrial materials and analogue-inspired graphics.
+
+The instrument must look and feel retro while benefiting from modern software capabilities, including precise editing, flexible routing, scalable interfaces and reliable project recall.
+
+The original Product Brief remains the authoritative specification for the instrument's functionality. These design specifications supplement its visual direction and technical architecture without removing or changing previously agreed features.
+
+HYPERREAL must operate entirely locally on the user's computer. No internet connection is required to install, launch or use the instrument.
+
+## 2. Visual Identity
+
+The visual language should draw inspiration from 1990s drum samplers, synthesisers and electronic studio equipment.
+
+Characteristics:
+
+- Charcoal, warm grey or cream-coloured instrument chassis.
+- Recessed panels and subtle physical depth.
+- Sixteen tactile rubber drum pads.
+- Physical-looking rotary encoders and switches.
+- Backlit electronic displays.
+- Screen-printed labels and technical markings.
+- Small illuminated status LEDs.
+- Analogue-inspired level meters.
+- Restrained animation and carefully designed lighting.
+- Clear, functional typography reminiscent of vintage hardware.
+
+The overall interface must feel like a believable physical instrument rather than a conventional software dashboard.
+
+Avoid excessive skeuomorphism, unnecessary ornamentation, exaggerated reflections or complex camera movement.
+
+The product must possess an original visual identity rather than directly reproduce an existing commercial drum machine.
+
+## 3. Colour and Materials
+
+Recommended primary colours:
+
+- Warm grey: main instrument chassis.
+- Charcoal: recessed sections and control surfaces.
+- Off-white: printed labels and markings.
+- Amber: primary display illumination.
+- Pale green: optional secondary electronic displays.
+- Muted red: overload indicators and selected status lights.
+- Lilac: restrained HYPERREAL branding accents.
+
+Materials should suggest painted metal, injection-moulded plastic, rubber and translucent illuminated components.
+
+Textures should be subtle and efficient.
+
+Lighting should emphasise physical depth without requiring expensive real-time rendering effects.
+
+## 4. Main Instrument Layout
+
+The instrument should resemble a physical desktop drum sampler viewed from a fixed, slightly elevated angle.
+
+The central feature is a 4 × 4 grid of sixteen drum pads.
+
+The surrounding interface should contain:
+
+- A prominent electronic display.
+- Rotary controls for frequently used parameters.
+- Dedicated navigation buttons.
+- Kit loading and saving controls.
+- Selected-pad information.
+- Status indicators.
+- Access to waveform editing, envelopes, filters, mixer and kit management.
+
+The sixteen pads must remain visually dominant and immediately accessible.
+
+The instrument should preserve the functionality and workflow requirements established in the Product Brief.
+
+Avoid requiring excessive navigation for common operations.
+
+## 5. Drum Pad Design
+
+Each of the sixteen pads should appear as a physical rubber performance pad.
+
+Visual characteristics:
+
+- Slightly raised or recessed rubber surfaces.
+- Subtle rounded edges.
+- Soft directional lighting.
+- Clearly identifiable selected state.
+- Legible sample and MIDI-note labels.
+- Small illuminated indicators.
+- Subtle animation when triggered.
+
+When a pad is triggered:
+
+1. The pad visually depresses.
+2. Illumination responds to MIDI velocity.
+3. The pad returns immediately to its resting position.
+4. The animation remains independent of audio playback timing.
+
+Pad interaction must remain responsive even when visual effects are disabled.
+
+Pad geometry and materials should be shared wherever possible to minimise rendering overhead.
+
+The interface must continue to support sample drag-and-drop, auditioning, selection, copy, paste, swap, clear and routing operations.
+
+## 6. Electronic Display
+
+HYPERREAL should feature a prominent vintage electronic display.
+
+The default appearance should resemble an illuminated monochrome LCD from 1990s sampling hardware.
+
+Recommended appearance:
+
+- Amber or pale-green illumination.
+- Dark contrasting background.
+- Pixel-inspired text and graphic elements.
+- Crisp, readable parameter values.
+- Subtle display texture.
+- Restrained phosphor-persistence effects.
+- Optional scanline-style detailing.
+
+The display should provide access to:
+
+- Selected-pad information.
+- Sample waveform editing.
+- Pitch and tuning.
+- Envelope editing.
+- Filter controls.
+- LFO settings.
+- Mixer configuration.
+- Kit selection and management.
+- Sample loading and error messages.
+
+The display is a visual representation of modern software functionality. It should not inherit the usability limitations of historical electronic displays.
+
+## 7. Waveform Editor
+
+The existing non-destructive waveform editor should resemble an electronic oscilloscope or vintage sampler display.
+
+Features:
+
+- Monochrome waveform trace.
+- Moving playback cursor.
+- Sample start and end markers.
+- Fade-in and fade-out visualisation.
+- Zoom controls.
+- Precise sample position readout.
+- Reverse playback indication.
+- Clear representation of the selected playback region.
+
+Waveforms should be drawn using efficient 2D rendering rather than expensive 3D geometry.
+
+Precomputed waveform overview data should be generated when samples are imported.
+
+The interface should avoid continuously recalculating waveform graphics.
+
+Animations should be updated only when playback or user interaction requires them.
+
+All editing must remain non-destructive.
+
+## 8. Rotary Controls and Switches
+
+Physical-looking rotary encoders should be used for appropriate parameters.
+
+These may include:
+
+- Pitch and fine tuning.
+- Envelope controls.
+- Filter cutoff and resonance.
+- LFO rate and modulation depth.
+- Gain and pan.
+- Compressor controls.
+
+Knobs should have:
+
+- Believable physical geometry.
+- Clearly visible indicator marks.
+- Consistent rotational behaviour.
+- Smooth interaction.
+- Immediate numerical feedback.
+- Double-click or equivalent reset functionality where appropriate.
+
+Three.js may be used for 3D knob rendering.
+
+However, CSS, SVG or pre-rendered assets should be preferred wherever they provide equivalent visual quality with lower rendering overhead.
+
+## 9. Mixer Interface
+
+The mixer should preserve the sixteen pad channels and master channel defined in the Product Brief.
+
+Its visual presentation should draw inspiration from compact analogue mixing consoles and vintage electronic drum machines.
+
+Recommended visual features:
+
+- Narrow LED level meters.
+- Optional needle-style metering.
+- Peak-hold indicators.
+- Illuminated mute and solo switches.
+- Physical-looking level controls.
+- Clear channel labels.
+- Output routing indicators.
+- Amber or red overload indication.
+
+Meter graphics should use lightweight, throttled updates.
+
+The underlying audio measurements must remain accurate.
+
+Visual updates must never interrupt or block audio processing.
+
+## 10. Recommended Technology Stack
+
+### Native audio framework
+JUCE 9, or a verified stable JUCE version compatible with the required plugin formats and target hosts.
+
+Responsibilities:
+
+- VST3 and AU integration.
+- Audio and MIDI processing.
+- Plugin parameters.
+- Host automation.
+- Audio output buses.
+- Session state management.
+- Native filesystem operations.
+- Real-time-safe DSP execution.
+
+### Audio engine
+Modern C++20 or C++23.
+
+Responsibilities:
+
+- Sample playback.
+- Resampling.
+- Voice allocation.
+- Polyphony.
+- Choke groups.
+- Envelope processing.
+- Filters.
+- LFO modulation.
+- Velocity response.
+- Mixing.
+- Compression where implemented.
+
+### Interface framework
+React with TypeScript.
+
+Responsibilities:
+
+- Interface composition.
+- Navigation.
+- Parameter controls.
+- Kit management screens.
+- Selected-pad editing.
+- Menus.
+- Display information.
+
+### Three-dimensional graphics
+Three.js, optionally using React Three Fiber.
+
+Responsibilities:
+
+- Physical drum pads.
+- Selected rotary controls.
+- Instrument chassis.
+- Switches and illuminated hardware elements.
+- Subtle lighting and depth.
+
+### Two-dimensional graphics
+CSS, SVG and Canvas where appropriate.
+
+Responsibilities:
+
+- Typography.
+- Labels.
+- LCD graphics.
+- Waveforms.
+- Parameter markings.
+- Menus.
+- Level meters.
+- Interface overlays.
+
+### Native/web interface integration
+JUCE WebBrowserComponent and supported JUCE webview bindings.
+
+Responsibilities:
+
+- Embedding the locally bundled interface.
+- Communication between JavaScript and C++.
+- Parameter updates.
+- User interaction.
+- State synchronisation.
+
+Web technology is used strictly as a local rendering and interaction technology. It does not imply a remotely hosted application.
+
+## 11. Fully Local and Offline Operation
+
+HYPERREAL must be a completely local desktop audio plugin.
+
+The installed instrument must function without internet connectivity.
+
+The application must not depend upon:
+
+- Remote servers.
+- Cloud infrastructure.
+- Web-hosted interfaces.
+- External runtime APIs.
+- Content delivery networks.
+- Online authentication.
+- User accounts.
+- Subscription verification.
+- Remote databases.
+- Telemetry services.
+- Internet-based sample processing.
+
+The instrument must remain fully functional when the computer has no network connection.
+
+All DSP processing must execute locally.
+
+All interface rendering must execute locally.
+
+All data persistence must execute locally.
+
+The plugin must not initiate network requests as part of its normal operation.
+
+## 12. Bundled Interface Resources
+
+All interface resources must be distributed with the installed application.
+
+These include:
+
+- Compiled React application.
+- JavaScript bundles.
+- Three.js libraries.
+- CSS stylesheets.
+- Fonts.
+- SVG assets.
+- Textures.
+- 3D geometry.
+- Icons.
+- Display graphics.
+- Required interface configuration.
+
+The JUCE WebView must load the embedded or locally packaged application resources.
+
+It must not load the interface from an external website or CDN.
+
+Development tools may use network connections during initial dependency installation or development, but the distributed plugin must not require them.
+
+Third-party dependencies must be versioned and packaged according to their applicable licences.
+
+## 13. Local Storage
+
+All user-generated content must be stored on the user's computer.
+
+This includes:
+
+- User-created kits.
+- Sample references and bundled sample data where required.
+- Factory kit installations.
+- Presets.
+- Plugin settings.
+- Parameter state.
+- Saved edits.
+- Kit metadata.
+- Relevant configuration files.
+
+Factory kits should remain separate from user-created kits.
+
+User-created kits must not be overwritten or deleted during ordinary application upgrades.
+
+The existing requirements for portable kits, DAW project recall and missing-sample recovery remain unchanged.
+
+No cloud storage or remote database is required.
+
+## 14. Audio and Interface Separation
+
+The C++ audio engine must remain independent of the graphical interface.
+
+The audio processing thread must never depend on:
+
+- React rendering.
+- Three.js rendering.
+- JavaScript execution.
+- WebView availability.
+- UI animation.
+- Filesystem access.
+- Network access.
+- Blocking locks.
+- Routine dynamic memory allocation.
+
+The interface communicates with the engine through a controlled parameter and event bridge.
+
+Host-facing plugin parameters must remain authoritative.
+
+Parameter updates must be correctly synchronised with host automation and saved state.
+
+Visual metering should receive compact summaries rather than continuous raw audio data.
+
+Closing the plugin interface must not affect audio playback.
+
+## 15. Graphics Performance
+
+The visual interface should aim for high-quality rendering with minimal idle CPU and GPU usage.
+
+Required optimisation principles:
+
+1. Use one shared Three.js scene wherever practical.
+2. Reuse geometry and materials.
+3. Use instanced rendering for repeated components where appropriate.
+4. Avoid unnecessary shaders and expensive post-processing.
+5. Use CSS and SVG for ordinary two-dimensional graphics.
+6. Precompute waveform display data.
+7. Avoid continuous rendering when the interface is static.
+8. Suspend unnecessary animation when the plugin editor is hidden.
+9. Limit visual metering update frequency.
+10. Avoid unnecessary React component re-rendering.
+11. Prefer lightweight textures and compressed assets.
+12. Test performance across supported display scaling configurations.
+
+Visual effects must degrade gracefully on less capable graphics hardware.
+
+The application should offer reduced-motion behaviour where appropriate.
+
+The DSP engine must never experience reduced audio performance because the visual interface is active.
+
+## 16. Monorepo Structure
+
+HYPERREAL should remain within a single Git repository.
+
+Project directory:
+
+C:\Users\shaun\hyperreal
+
+Recommended structure:
+
+    apps/
+        plugin/              JUCE plugin and host integration
+
+    packages/
+        engine/              Native C++ audio engine
+        ui/                  React and TypeScript interface
+        visuals/             Three.js models and graphics
+        bridge/              JUCE/WebView communication
+        kits/                Kit persistence and management
+
+    assets/
+        fonts/
+        textures/
+        models/
+        icons/
+        factory-kits/
+
+    tests/
+        dsp/
+        state/
+        ui/
+        performance/
+        host-integration/
+
+    packaging/
+        windows/
+        macos/
+
+    docs/
+
+    changelog/
+
+    .github/
+        workflows/
+
+    CMakeLists.txt
+
+The structure should remain practical for a solo developer.
+
+Avoid introducing unnecessary packages, services or abstractions.
+
+## 17. Development Tooling
+
+Recommended development tools include:
+
+- CMake for native project configuration.
+- Modern C++ compiler toolchains.
+- React and TypeScript tooling.
+- A locally served development interface for rapid UI iteration.
+- Pamplejuce where compatible with the selected JUCE version and architecture.
+- Melatonin Inspector for native component debugging where useful.
+- Automated DSP tests.
+- Plugin validation tools.
+- GitHub Actions for continuous integration.
+
+Development builds may use a local development server.
+
+Production builds must contain all required runtime resources and must not depend on that server.
+
+GitHub may be used for:
+
+- Repository hosting.
+- Source control.
+- Issues and project milestones.
+- Continuous integration.
+- Automated testing.
+- Build artefacts.
+- Release distribution.
+
+GitHub must not be required for normal operation of the installed VST.
+
+## 18. Development and Release Requirements
+
+The project must retain the existing development requirements.
+
+These include:
+
+- A single monorepo.
+- Development by one developer.
+- Reproducible builds.
+- Versioned dependencies.
+- Automated testing.
+- Plugin validation.
+- Reliable DAW state restoration.
+- Windows VST3 distribution.
+- macOS VST3/AU support when implemented.
+- Local installation of factory content.
+- Preservation of user-created kits during upgrades.
+
+All significant code changes should be recorded in the changelog directory.
+
+Each entry should use a date-and-time-based Markdown filename.
+
+The application installer must include all resources necessary for offline operation.
+
+## 19. Explicit Design Exclusions
+
+The following are not required for the initial release:
+
+- A fully navigable 3D instrument environment.
+- User-controlled camera movement.
+- Photorealistic ray-traced graphics.
+- Expensive lighting simulations.
+- Complex particle effects.
+- Elaborate environmental reflections.
+- Online sample libraries.
+- Cloud-based preset management.
+- Online collaboration.
+- Remote DSP processing.
+- User accounts.
+- Integrated song arrangement.
+- An integrated step sequencer.
+- Large effects racks.
+- Extensive sample-management systems.
+
+Additional graphical complexity must be justified by clear improvements to the user experience.
+
+## 20. Design Acceptance Criteria
+
+The design implementation should be considered successful when:
+
+1. HYPERREAL clearly resembles an original 1990s electronic drum sampler.
+2. The 16-pad grid remains the central interface element.
+3. Pads provide convincing tactile visual feedback.
+4. The electronic display presents sample editing and parameter information clearly.
+5. Rotary controls feel precise and visually responsive.
+6. All existing Product Brief functionality remains accessible.
+7. The interface scales correctly across supported display resolutions.
+8. The plugin operates fully offline.
+9. Every required interface resource is bundled locally.
+10. User-generated data is stored locally.
+11. The interface introduces no audio-thread blocking or instability.
+12. Idle CPU and GPU usage remain appropriately low.
+13. Plugin state and kits restore correctly after DAW restart.
+14. The instrument remains responsive during rapid MIDI triggering.
+15. Visual design does not interfere with usability or audio performance.
+
+## 21. Final Design Principle
+
+HYPERREAL should feel like a beautifully engineered physical drum machine from the 1990s, recreated as a modern software instrument.
+
+Its appearance should be distinctive, tactile and unmistakably retro.
+
+Its behaviour should be immediate, precise and dependable.
+
+Its architecture should remain modular, maintainable and efficient.
+
+Modern technologies should be introduced only where they provide meaningful improvements to visual quality, development efficiency or user experience.
+
+The instrument must remain a completely local application, with all audio processing, interface rendering and data storage performed on the user's computer.
+
+The objective is not to produce the most technically elaborate VST interface.
+
+The objective is to produce an exceptionally well-designed drum sampler that feels like vintage hardware, performs like modern software and remains practical for a solo developer to build and maintain.
+
+END OF DESIGN SPECIFICATIONS

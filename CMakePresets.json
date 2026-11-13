@@ -1,0 +1,35 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 22,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-x64",
+      "displayName": "Windows x64 Visual Studio 2022",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/windows-x64",
+      "cacheVariables": {
+        "JUCE_BUILD_EXTRAS": "OFF",
+        "JUCE_BUILD_EXAMPLES": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-x64",
+      "configuration": "Debug",
+      "targets": ["HYPERREAL_VST3", "HYPERREAL_Standalone"]
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-x64",
+      "configuration": "Release",
+      "targets": ["HYPERREAL_VST3", "HYPERREAL_Standalone"]
+    }
+  ]
+}

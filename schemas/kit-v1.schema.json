@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hyperreal.local/schemas/kit-v1.schema.json",
+  "title": "HYPERREAL portable kit manifest v1 draft",
+  "type": "object",
+  "required": ["schemaVersion", "name", "pads"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "pads": {
+      "type": "array",
+      "minItems": 16,
+      "maxItems": 16,
+      "items": { "$ref": "pad-v1.schema.json" }
+    },
+    "metadata": { "type": "object" }
+  },
+  "additionalProperties": false
+}

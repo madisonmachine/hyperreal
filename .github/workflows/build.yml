@@ -1,0 +1,56 @@
+name: Build shell
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned CMake
+        shell: pwsh
+        run: |
+          python -m pip install cmake==3.31.10
+          python -c "import cmake; print(cmake.CMAKE_BIN_DIR)" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Install WebView2 SDK
+        shell: pwsh
+        run: |
+          Register-PackageSource -ProviderName NuGet -Name nugetRepository -Location 'https://www.nuget.org/api/v2' -Trusted -Force
+          Install-Package Microsoft.Web.WebView2 -ProviderName NuGet -Scope CurrentUser -RequiredVersion 1.0.3485.44 -Source nugetRepository -Force -Confirm:$false
+      - name: Configure
+        run: cmake --preset windows-x64
+      - name: Build
+        run: cmake --build --preset windows-release
+      - name: Validate VST3
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'pluginval_Windows.zip'
+          Invoke-WebRequest -Uri 'https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip' -OutFile $zip
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash
+          $expected = 'C08E61CE3B96DB41636F8EC7E76F4C7E2C13EBDAC7FA1B5A1F52B4F32EC715AB'
+          if ($actual -ne $expected) { throw "pluginval archive checksum mismatch" }
+          $dir = Join-Path $env:RUNNER_TEMP 'pluginval'
+          Expand-Archive -LiteralPath $zip -DestinationPath $dir -Force
+          $plugin = 'build/windows-x64/HYPERREAL_artefacts/Release/VST3/HYPERREAL.vst3'
+          $log = Join-Path $dir 'validation.txt'
+          & (Join-Path $dir 'pluginval.exe') --validate $plugin --strictness-level 5 --skip-gui-tests --output-dir $dir --output-filename 'validation.txt'
+          $deadline = (Get-Date).AddMinutes(3)
+          while ((Get-Date) -lt $deadline) {
+            if ((Test-Path $log) -and ((Get-Content $log -Raw) -match '(?m)^SUCCESS\s*$')) { break }
+            Start-Sleep -Seconds 1
+          }
+          if (-not (Test-Path $log)) { throw 'pluginval produced no log' }
+          Get-Content $log -Tail 50
+          if (-not ((Get-Content $log -Raw) -match '(?m)^SUCCESS\s*$')) { throw 'pluginval did not pass' }
+      - name: Upload shell artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyperreal-windows-shell
+          path: build/windows-x64/HYPERREAL_artefacts/Release/
