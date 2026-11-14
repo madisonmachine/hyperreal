@@ -1,6 +1,6 @@
 # Phase 3 sixteen-pad foundation
 
-Status: implementation complete, with revised editor host checks and deferred stress checks open, 14 November 2026. This branch is based on the Phase 2 draft pull request.
+Status: implementation complete, with one-shot end-fade host listening and deferred stress checks open, 14 November 2026. This branch is based on the Phase 2 draft pull request.
 
 ## Implemented in this slice
 
@@ -36,11 +36,11 @@ Cubase Pro 15 confirmed the 0.3.0 custom 16-pad editor with VOICES and VELOCITY 
 
 The owner then completed the remaining interactive Cubase procedure. Right-click LOAD SAMPLE and CLEAR PAD worked, including confirmation and cancellation of the clear prompt. Copy/paste transferred a sample plus mode, choke group, voice limit and velocity curve settings; the destination kept its MIDI slot. The 16-note MIDI 36-51 fixture played correctly. One-shot/gate release, mute and multi-solo including mute precedence, and shared/off choke groups behaved as expected. Voice limit 1 versus 4, the three velocity curves, and Cubase write/read automation behaved as expected. Stopping Cubase also stopped a playing sample, but the audible result cannot distinguish HYPERREAL's playhead transition from a host MIDI all-notes-off event. The short sample loads did not expose a usable CANCEL LOAD interval. Sustained editor-open use was deferred.
 
-The remaining Phase 3 implementation gaps were closed after that Cubase session. The engine now publishes a per-pad MIDI note-on counter; the editor flashes MIDI activity separately from click audition and persistent selection/load state. One-shot playback fades through the last 5 ms of the source sample to zero at its final frame. At 64 occupied fade tails, a new note is dropped while the selected old voice releases in place, avoiding an abrupt tail replacement with bounded memory. A test-only worker gate deterministically pauses a valid decode, cancels it and verifies the prior playable pad remains READY. Native tests also check the MIDI counters, one-shot end fade and tail-pool overflow. The revised editor display and audio behavior still need a Cubase retest.
+The remaining Phase 3 implementation gaps were closed after that Cubase session. The engine now publishes a per-pad MIDI note-on counter; the editor flashes MIDI activity separately from click audition and persistent selection/load state. The owner confirmed both distinct flashes in Cubase Pro 15. One-shot playback fades through the last 5 ms of the source sample to zero at its final frame. At 64 occupied fade tails, a new note is dropped while the selected old voice releases in place, avoiding an abrupt tail replacement with bounded memory. A test-only worker gate deterministically pauses a valid decode, cancels it and verifies the prior playable pad remains READY. Native tests also check the MIDI counters, one-shot end fade and tail-pool overflow. The revised one-shot ending has not yet had a Cubase listening check. The latest draft PR Windows CI passed the build and test checks.
 
 ## Checks and features not yet completed
 
-- Cubase retest of the revised per-pad MIDI/audition flashes and the one-shot end fade. The anti-click overflow and cancellation paths have deterministic native tests; direct Cubase CANCEL LOAD observation remains impractical with the small fixtures.
+- Cubase listening check of the revised one-shot end fade. The activity flashes were confirmed in Cubase; the anti-click overflow and cancellation paths have deterministic native tests. Direct Cubase CANCEL LOAD observation remains impractical with the small fixtures.
 - Cubase stop silenced an active sample, but it remains unclear whether this used the playhead transition or Cubase's MIDI all-notes-off. The engine transport-stop request is covered by a native test.
 - Long-session memory stress with the editor open, plus sustained host performance measurement.
 - The Phase 2 clean disconnected-Windows installation test is deferred at the owner's request until a suitable VM or second machine is available later in development. The signed offline WebView2 installer and readiness check are prepared; this remains a release gate.
