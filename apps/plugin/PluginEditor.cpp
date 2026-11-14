@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include <BinaryData.h>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -166,10 +167,36 @@ bool HyperrealAudioProcessorEditor::isInterestedInFileDrag (const juce::StringAr
            && juce::File (files[0]).hasFileExtension (".wav;.aif;.aiff;.flac");
 }
 
-void HyperrealAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, int)
+void HyperrealAudioProcessorEditor::filesDropped (const juce::StringArray& files, int x, int y)
 {
-    if (isInterestedInFileDrag (files))
-        processor.requestSampleLoad (processor.getSelectedPad(), juce::File (files[0]));
+    if (! isInterestedInFileDrag (files))
+        return;
+
+    const auto file = juce::File (files[0]);
+    const auto fallbackPad = processor.getSelectedPad();
+    const auto width = std::max (1, browser.getWidth());
+    const auto height = std::max (1, browser.getHeight());
+    const auto script = "(() => { const element = document.elementFromPoint("
+        + juce::String (x) + " * window.innerWidth / " + juce::String (width) + ", "
+        + juce::String (y) + " * window.innerHeight / " + juce::String (height)
+        + "); const pad = element?.closest('[data-pad-index]'); return pad ? Number(pad.dataset.padIndex) : -1; })()";
+    browser.evaluateJavascript (script,
+        [safeEditor = juce::Component::SafePointer<HyperrealAudioProcessorEditor> (this),
+         file, fallbackPad] (const auto& result)
+        {
+            if (auto* editor = safeEditor.getComponent())
+            {
+                auto target = fallbackPad;
+                if (const auto* value = result.getResult())
+                    if (value->isInt() || value->isInt64() || value->isDouble())
+                    {
+                        const auto candidate = static_cast<int> (*value);
+                        if (candidate >= 0 && candidate < SampleEngine::padCount)
+                            target = candidate;
+                    }
+                editor->processor.requestSampleLoad (target, file);
+            }
+        });
 }
 
 void HyperrealAudioProcessorEditor::openSampleChooser()

@@ -1,6 +1,6 @@
 # HYPERREAL
 
-HYPERREAL is a 16-pad drum sampler VST3. The Phase 3 foundation gives each pad an independent sample slot for MIDI notes 36–51, a bounded overlapping voice pool, native sample loading and audition, and a local React interface. This branch is a prototype; per-pad drop targeting, remaining host validation, and the final visual design remain in development.
+HYPERREAL is a 16-pad drum sampler VST3. The Phase 3 foundation gives each pad an independent sample slot for MIDI notes 36–51, a bounded overlapping voice pool, native sample loading and audition, and a local React interface. This branch is a prototype; file-drop host validation and the final visual design remain in development.
 
 The [product brief](brief.docx) defines functionality, the [design brief](design-brief.txt) defines the retro local interface, and the [development plan](plan.docx) defines phase order. Dated entries live in [changelogs](changelogs).
 

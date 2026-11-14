@@ -74,6 +74,7 @@ export default function App() {
     {operationError && <p className="operation-error" role="alert">{operationError}</p>}
     <section className="pads" aria-label="Sixteen drum pads">{snapshot.pads.map((pad) =>
       <button key={pad.midiNote}
+        data-pad-index={pad.index}
         className={'pad '+(pad.index === selected ? 'selected ' : '')+(pad.status === 'ready' ? 'loaded ' : '')+(pad.muted ? 'muted ' : '')+(pad.solo ? 'solo' : '')}
         onClick={() => { setPending(null); setOperationError(''); void selectPad(pad.index) }}
         onDoubleClick={() => { if (pad.status === 'ready') void audition(pad.index) }}
