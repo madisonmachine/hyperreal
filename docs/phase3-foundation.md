@@ -41,6 +41,6 @@ The owner then completed the remaining interactive Cubase procedure. Right-click
 - Direct Cubase observation of CANCEL LOAD remains open because the fixture loads finish before the button can be used. Native request invalidation and status behavior should receive a dedicated deterministic test before this is treated as closed.
 - Cubase stop silenced an active sample, but it remains unclear whether this used the playhead transition or Cubase's MIDI all-notes-off. The engine transport-stop request is covered by a native test; worst-case fade-tail saturation may still replace the oldest tail abruptly.
 - Long-session memory stress with the editor open, plus sustained host performance measurement.
-- The Phase 2 clean disconnected-Windows installation test remains open. The signed offline WebView2 installer and readiness check are prepared, but this PC has no clean Windows VM. This check remains a release gate.
+- The Phase 2 clean disconnected-Windows installation test is deferred at the owner's request until a suitable VM or second machine is available later in development. The signed offline WebView2 installer and readiness check are prepared; this remains a release gate.
 
 The callback performs no file I/O, JavaScript, routine allocation or blocking lock. Host state writing remains synchronous and can be large; snapshot cost under dense playback and large media requires later hardening.

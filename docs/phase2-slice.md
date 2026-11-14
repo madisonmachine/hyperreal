@@ -29,5 +29,5 @@ The audio callback reads immutable sample data and prepared atomics. It does no 
 
 ## Remaining Phase 2 checks
 
-- Verify installed operation on a clean machine with networking disabled. Include the prepared WebView2 standalone prerequisite in the eventual installer and review current redistribution terms.
+- Clean disconnected-Windows installation is deferred at the owner's request until a suitable VM or second machine is available later in development. The prepared WebView2 standalone prerequisite and local readiness check do not constitute this host acceptance test. It remains a release gate; the eventual installer must include the prerequisite and current redistribution terms must be reviewed.
 - The Windows computer-use helper was unavailable during this pass, so the Cubase interaction checks were performed by the project owner.
