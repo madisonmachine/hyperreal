@@ -8,9 +8,9 @@ The product brief is authoritative for instrument behaviour. The design brief ad
 | Stable parameter IDs and versioned state contracts | Both briefs, plan | 1 | Initial contracts recorded |
 | CI, changelog and documented build | Product brief, plan | 1 | Main and Phase 2 pull request runs passed |
 | Local React/WebView bundle and native bridge | Design brief, plan | 2 | Cubase editor opened; LOAD and AUDITION passed |
-| One-pad import, MIDI, audition, offline use and recall | Product brief, plan | 2 | Cubase import, audition, source-free recall and editor-closed MIDI passed; offline prerequisite prepared; disconnected clean-machine check pending |
-| Sixteen pads, MIDI 36-51, sample operations and voices | Product brief | 3 | Pending |
-| One-shot/gated, velocity, polyphony, choke, mute and solo | Product brief | 3 | Pending |
+| One-pad import, MIDI, audition, offline use and recall | Product brief, plan | 2 | Cubase import, audition, source-free recall and editor-closed MIDI passed; disconnected clean-machine check deferred until a suitable test machine exists |
+| Sixteen pads, MIDI 36-51, sample operations and voices | Product brief | 3 | Cubase confirmed mapping, drop targeting, pad actions, recall, and distinct MIDI/audition flashes |
+| One-shot/gated, velocity, polyphony, choke, mute and solo | Product brief | 3 | Cubase confirmed controls; native tests cover one-shot end fade, bounded tail overflow without abrupt cuts, and deterministic import cancellation; revised audio awaits host retest |
 | Non-destructive trim, fades, reverse and tuning | Product brief | 4 | Pending |
 | Amplitude/filter envelopes, filters, LFO and automation | Product brief | 5 | Pending |
 | Mixer and up to 16 separate stereo pad outputs | Product brief | 6 | Pending |

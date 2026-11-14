@@ -18,4 +18,6 @@ The check requires the recorded offline installer, the Release VST3 binary and t
 
 ## Clean-machine acceptance run
 
+Status: deferred at the owner's request until a suitable VM or second machine is available later in development. This remains a release gate.
+
 On a clean Windows 10 or 11 x64 test machine, copy the verified installer and VST3 bundle before disconnecting networking. With networking disabled, detect the runtime using the readiness check. If absent, install the copied `MicrosoftEdgeWebView2RuntimeInstallerX64.exe` using Microsoft's documented `/silent /install` option, then rerun the check. Install the VST3 in the per-user or common VST3 folder, open it in Cubase Pro 15, import and audition a local sample, trigger MIDI note 36, and save/reopen the project with the original sample path unavailable. Record the Windows, Cubase and Runtime versions and whether the editor or generic fallback appears. This acceptance run is still pending; the current machine already has WebView2 installed.

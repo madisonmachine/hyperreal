@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(HYPERREAL VERSION 0.2.0 LANGUAGES C CXX)
+project(HYPERREAL VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -68,12 +68,24 @@ add_executable(hyperreal_engine_smoke
     tests/dsp/SampleEngineSmoke.cpp
     packages/engine/SampleEngine.cpp
 )
-target_compile_definitions(hyperreal_engine_smoke PRIVATE JUCE_USE_CURL=0)
+target_compile_definitions(hyperreal_engine_smoke PRIVATE JUCE_USE_CURL=0 HYPERREAL_ENGINE_TEST_HOOKS=1)
 target_link_libraries(hyperreal_engine_smoke PRIVATE
     juce::juce_audio_formats
     juce::juce_recommended_config_flags
 )
 add_test(NAME hyperreal_engine_smoke COMMAND hyperreal_engine_smoke)
+add_executable(hyperreal_engine_benchmark
+    tests/perf/EngineDenseTrigger.cpp
+    packages/engine/SampleEngine.cpp
+)
+target_compile_definitions(hyperreal_engine_benchmark PRIVATE JUCE_USE_CURL=0)
+target_link_libraries(hyperreal_engine_benchmark PRIVATE
+    juce::juce_audio_formats
+    juce::juce_recommended_config_flags
+)
+if(WIN32)
+    target_link_libraries(hyperreal_engine_benchmark PRIVATE psapi)
+endif()
 add_executable(hyperreal_processor_state_smoke
     tests/state/ProcessorStateSmoke.cpp
 )
