@@ -26,6 +26,7 @@ SampleEngine::SampleEngine()
     {
         activeSamples[pad].store (nullptr);
         auditionCounters[pad].store (0);
+        midiTriggerCounters[pad].store (0);
         status[pad] = "empty";
         message[pad] = "Load WAV, AIFF or FLAC to begin.";
     }
@@ -278,7 +279,6 @@ void SampleEngine::startVoice (int pad, float velocity, bool audition,
     if (voices[chosen].sample != nullptr)
     {
         int tailSlot = -1;
-        int oldestTail = -1;
         for (int index = 0; index < maxVoices; ++index)
         {
             if (fadeTails[index].sample == nullptr)
@@ -286,17 +286,17 @@ void SampleEngine::startVoice (int pad, float velocity, bool audition,
                 tailSlot = index;
                 break;
             }
-            if (oldestTail < 0 || fadeTails[index].sequence < fadeTails[oldestTail].sequence)
-                oldestTail = index;
         }
         if (tailSlot < 0)
-            tailSlot = oldestTail;
-        if (tailSlot >= 0)
         {
-            fadeTails[tailSlot] = voices[chosen];
-            tailPointers[tailSlot].store (fadeTails[tailSlot].sample);
-            beginRelease (fadeTails[tailSlot]);
+            // Keep every interrupted voice on a fade. When the bounded tail pool
+            // is full, release this voice in place and drop the incoming note.
+            beginRelease (voices[chosen]);
+            return;
         }
+        fadeTails[tailSlot] = voices[chosen];
+        tailPointers[tailSlot].store (fadeTails[tailSlot].sample);
+        beginRelease (fadeTails[tailSlot]);
     }
 
     const auto gated = settings[pad].gated && ! audition;
@@ -326,6 +326,12 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
         source->audio.getNumChannels() > 1 ? 1 : 0);
     const auto step = source->sampleRate / hostRate;
     const auto level = std::clamp (settings[playing.pad].level, 0.0f, 1.0f);
+    // Phase 3 one-shot schedule: hold at full level, then fade through the
+    // final 5 ms of source audio. Gate and choke releases can begin earlier.
+    const auto endFadeFrames = std::max (1.0, std::min (source->sampleRate * 0.005,
+                                                       static_cast<double> (frames - 1)));
+    const auto endFadeStart = static_cast<double> (frames - 1) - endFadeFrames;
+    const auto endFadeInverse = 1.0 / endFadeFrames;
     for (int frame = begin; frame < end; ++frame)
     {
         const auto index = static_cast<int> (playing.position);
@@ -339,10 +345,13 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
         const auto fraction = static_cast<float> (playing.position - index);
         const auto releaseGain = playing.releaseRemaining > 0
             ? static_cast<float> (playing.releaseRemaining) / playing.releaseTotal : 1.0f;
+        const auto endGain = playing.position < endFadeStart ? 1.0f
+            : static_cast<float> (std::max (0.0,
+                (static_cast<double> (frames - 1) - playing.position) * endFadeInverse));
         left[frame] += (sourceLeft[index] + (sourceLeft[next] - sourceLeft[index]) * fraction)
-                       * playing.gain * level * releaseGain;
+                       * playing.gain * level * releaseGain * endGain;
         right[frame] += (sourceRight[index] + (sourceRight[next] - sourceRight[index]) * fraction)
-                        * playing.gain * level * releaseGain;
+                        * playing.gain * level * releaseGain * endGain;
         playing.position += step;
         if (playing.releaseRemaining > 0 && --playing.releaseRemaining == 0)
         {
@@ -423,8 +432,11 @@ void SampleEngine::process (juce::AudioBuffer<float>& output, const juce::MidiBu
         {
             const auto pad = midiMessage.getNoteNumber() - firstMidiNote;
             if (pad >= 0 && pad < padCount)
+            {
+                midiTriggerCounters[pad].fetch_add (1, std::memory_order_relaxed);
                 startVoice (pad, midiMessage.getFloatVelocity(), false,
                             midiMessage.getChannel(), settings);
+            }
         }
     }
 
@@ -454,6 +466,8 @@ juce::var SampleEngine::getSnapshot (int selectedPad) const
         auto* item = new juce::DynamicObject();
         item->setProperty ("index", pad);
         item->setProperty ("midiNote", firstMidiNote + pad);
+        item->setProperty ("midiTriggerCount", static_cast<juce::int64> (
+            midiTriggerCounters[pad].load (std::memory_order_relaxed)));
         item->setProperty ("status", status[pad]);
         item->setProperty ("sampleName", current[pad] != nullptr ? current[pad]->name : juce::String());
         pads.add (juce::var (item));
@@ -531,6 +545,12 @@ void SampleEngine::workerLoop()
             generation = loadGenerations[pad];
             pendingLoads[pad] = false;
         }
+
+#ifdef HYPERREAL_ENGINE_TEST_HOOKS
+        testDecodeStarted.store (true);
+        while (testPauseDecode.load())
+            std::this_thread::sleep_for (std::chrono::milliseconds (1));
+#endif
 
         juce::String error;
         std::unique_ptr<Sample> decoded;

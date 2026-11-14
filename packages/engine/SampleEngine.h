@@ -47,6 +47,15 @@ public:
     void requestAudition (int pad) noexcept;
     void requestTransportStop() noexcept { transportStopRequested.store (true); }
     void requestAudition() noexcept { requestAudition (0); }
+#ifdef HYPERREAL_ENGINE_TEST_HOOKS
+    void pauseNextDecodeForTest() noexcept
+    {
+        testDecodeStarted.store (false);
+        testPauseDecode.store (true);
+    }
+    bool decodeStartedForTest() const noexcept { return testDecodeStarted.load(); }
+    void resumeDecodeForTest() noexcept { testPauseDecode.store (false); }
+#endif
     juce::var getSnapshot (int selectedPad = 0) const;
     void writeSampleState (juce::OutputStream& output) const;
     bool restoreSampleState (juce::InputStream& input);
@@ -114,7 +123,12 @@ private:
     std::array<std::atomic<const Sample*>, maxVoices> tailPointers {};
     std::atomic<bool> callbackActive { false };
     std::array<std::atomic<unsigned int>, padCount> auditionCounters {};
+    std::array<std::atomic<unsigned int>, padCount> midiTriggerCounters {};
     std::atomic<bool> transportStopRequested { false };
+#ifdef HYPERREAL_ENGINE_TEST_HOOKS
+    std::atomic<bool> testPauseDecode { false };
+    std::atomic<bool> testDecodeStarted { false };
+#endif
 
     // The audio thread owns all voice state. Other threads only inspect voicePointers.
     std::array<Voice, maxVoices> voices {};

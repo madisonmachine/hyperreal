@@ -1,6 +1,6 @@
 # Phase 3 sixteen-pad foundation
 
-Status: in progress, 14 November 2026. This branch is based on the Phase 2 draft pull request.
+Status: implementation complete, with revised editor host checks and deferred stress checks open, 14 November 2026. This branch is based on the Phase 2 draft pull request.
 
 ## Implemented in this slice
 
@@ -24,7 +24,7 @@ Pad copy, paste, swap and clear now move the sample and all current per-pad sett
 
 The engine now uses a bounded 64-slot fade-tail pool when stealing a voice. Gated note-off matches MIDI channel and releases the oldest held note for that pad/channel. Per-pad voice limit is 1 to 4; one voice provides mono retrigger. Velocity curves are soft (square root), linear and hard (square). HRP6 saves the new controls and reads HRP5. Same-offset events follow MIDI buffer order, so the later note in a choke group wins. A playing-to-stopped host playhead transition requests a 5 ms release of active voices; the engine path is covered by a native test. Cubase showed that native window file drops did not reach JUCE through WebView2. The editor now reads a dropped File in bounded 64 KB chunks inside WebView2, transfers the bytes through validated native commands, and decodes them on the worker. The pad that receives the DOM drop is the target; drops outside the grid target the selected pad. Cubase confirmed that drag and drop now loads samples successfully.
 
-A headless Release benchmark loaded 16 pads and processed 100,000 blocks of 128 frames at 44.1 kHz with 16 triggers per block: 1.6 million triggers in about 5.96 seconds, 0.060 ms average and 0.793 ms worst observed block in the latest run. Private bytes stayed at 2,813,952. A further 5,000 copy/paste/swap/clear and snapshot cycles and 1,000 worker sample replacements while processing also left private bytes at 2,813,952 after warmup. This is a synthetic closed-editor measurement on this PC, not a DAW timing guarantee or a long-session editor test.
+A headless Release benchmark of the revised engine loaded 16 pads and processed 100,000 blocks of 128 frames at 44.1 kHz with 16 triggers per block: 1.6 million triggers in about 6.70 seconds, 0.067 ms average and 0.384 ms worst observed block. Private bytes stayed at 2,887,680. A further 5,000 copy/paste/swap/clear and snapshot cycles and 1,000 worker sample replacements while processing also left private bytes level after warmup. This is a synthetic closed-editor measurement on this PC, not a DAW timing guarantee or a long-session editor test.
 
 - The React/TypeScript UI production build passed.
 - The Release VST3 and standalone build passed.
@@ -36,10 +36,12 @@ Cubase Pro 15 confirmed the 0.3.0 custom 16-pad editor with VOICES and VELOCITY 
 
 The owner then completed the remaining interactive Cubase procedure. Right-click LOAD SAMPLE and CLEAR PAD worked, including confirmation and cancellation of the clear prompt. Copy/paste transferred a sample plus mode, choke group, voice limit and velocity curve settings; the destination kept its MIDI slot. The 16-note MIDI 36-51 fixture played correctly. One-shot/gate release, mute and multi-solo including mute precedence, and shared/off choke groups behaved as expected. Voice limit 1 versus 4, the three velocity curves, and Cubase write/read automation behaved as expected. Stopping Cubase also stopped a playing sample, but the audible result cannot distinguish HYPERREAL's playhead transition from a host MIDI all-notes-off event. The short sample loads did not expose a usable CANCEL LOAD interval. Sustained editor-open use was deferred.
 
+The remaining Phase 3 implementation gaps were closed after that Cubase session. The engine now publishes a per-pad MIDI note-on counter; the editor flashes MIDI activity separately from click audition and persistent selection/load state. One-shot playback fades through the last 5 ms of the source sample to zero at its final frame. At 64 occupied fade tails, a new note is dropped while the selected old voice releases in place, avoiding an abrupt tail replacement with bounded memory. A test-only worker gate deterministically pauses a valid decode, cancels it and verifies the prior playable pad remains READY. Native tests also check the MIDI counters, one-shot end fade and tail-pool overflow. The revised editor display and audio behavior still need a Cubase retest.
+
 ## Checks and features not yet completed
 
-- Direct Cubase observation of CANCEL LOAD remains open because the fixture loads finish before the button can be used. Native request invalidation and status behavior should receive a dedicated deterministic test before this is treated as closed.
-- Cubase stop silenced an active sample, but it remains unclear whether this used the playhead transition or Cubase's MIDI all-notes-off. The engine transport-stop request is covered by a native test; worst-case fade-tail saturation may still replace the oldest tail abruptly.
+- Cubase retest of the revised per-pad MIDI/audition flashes and the one-shot end fade. The anti-click overflow and cancellation paths have deterministic native tests; direct Cubase CANCEL LOAD observation remains impractical with the small fixtures.
+- Cubase stop silenced an active sample, but it remains unclear whether this used the playhead transition or Cubase's MIDI all-notes-off. The engine transport-stop request is covered by a native test.
 - Long-session memory stress with the editor open, plus sustained host performance measurement.
 - The Phase 2 clean disconnected-Windows installation test is deferred at the owner's request until a suitable VM or second machine is available later in development. The signed offline WebView2 installer and readiness check are prepared; this remains a release gate.
 

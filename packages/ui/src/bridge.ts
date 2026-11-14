@@ -1,6 +1,6 @@
 ﻿import { getNativeFunction } from '@juce-framework/webview'
 
-export type PadSnapshot = { index: number; midiNote: number; status: 'empty'|'loading'|'ready'|'error'; sampleName: string; muted: boolean; solo: boolean }
+export type PadSnapshot = { index: number; midiNote: number; midiTriggerCount: number; midiActive?: boolean; status: 'empty'|'loading'|'ready'|'error'; sampleName: string; muted: boolean; solo: boolean }
 export type Snapshot = {
   schemaVersion: number
   selectedPad: number
@@ -23,7 +23,7 @@ export type Snapshot = {
 const demo: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
   pads: Array.from({ length: 16 }, (_, index) => ({
-    index, midiNote: index + 36, status: 'empty', sampleName: '', muted: false, solo: false
+    index, midiNote: index + 36, midiTriggerCount: 0, status: 'empty', sampleName: '', muted: false, solo: false
   })),
   sampleName: '', status: 'empty', message: 'Open the plugin to load a sample.',
   durationSeconds: 0, sampleRate: 0, masterGain: 1,

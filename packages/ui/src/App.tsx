@@ -1,10 +1,10 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { audition, cancelLoad, chooseSample, clearPad, copyPad, importDroppedFile, pastePad, readSnapshot, selectPad, setChokeGroup, setMasterGain, setPadMode, setPadMute, setPadSolo, setVelocityCurve, setVoiceLimit, swapPads, type Snapshot } from './bridge'
 
 const initial: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
   pads: Array.from({ length: 16 }, (_, index) => ({
-    index, midiNote: index + 36, status: 'empty', sampleName: '', muted: false, solo: false
+    index, midiNote: index + 36, midiTriggerCount: 0, status: 'empty', sampleName: '', muted: false, solo: false
   })),
   sampleName: '', status: 'empty', message: '', durationSeconds: 0,
   sampleRate: 0, masterGain: 1, padLevel: 1, padMode: 0, chokeGroup: 0,
@@ -18,13 +18,28 @@ export default function App() {
   const [pending, setPending] = useState<{ kind: 'paste'|'swap'|'clear'; pad: number; otherPad?: number } | null>(null)
   const [context, setContext] = useState<{ pad: number; x: number; y: number } | null>(null)
   const [dropProgress, setDropProgress] = useState<{ pad: number; percent: number } | null>(null)
+  const [auditionFlash, setAuditionFlash] = useState<number | null>(null)
+  const auditionTimer = useRef<number | undefined>(undefined)
   const [operationError, setOperationError] = useState('')
   useEffect(() => {
     let alive = true
+    let lastMidiCounts: number[] | null = null
+    const midiFlashUntil = Array<number>(16).fill(0)
     const refresh = async () => {
       try {
         const next = await readSnapshot()
-        if (alive) setSnapshot(next)
+        if (alive) {
+          const now = Date.now()
+          const counts = next.pads.map(pad => pad.midiTriggerCount)
+          if (lastMidiCounts)
+            counts.forEach((count, index) => {
+              if (count !== lastMidiCounts?.[index]) midiFlashUntil[index] = now + 350
+            })
+          lastMidiCounts = counts
+          setSnapshot({ ...next, pads: next.pads.map((pad, index) => ({
+            ...pad, midiActive: now < midiFlashUntil[index]
+          })) })
+        }
       } catch {
         if (alive) setSnapshot(current => ({
           ...current, status: 'error', message: 'Native state unavailable.'
@@ -33,7 +48,7 @@ export default function App() {
     }
     void refresh()
     const timer = window.setInterval(() => void refresh(), 250)
-    return () => { alive = false; window.clearInterval(timer) }
+    return () => { alive = false; window.clearInterval(timer); window.clearTimeout(auditionTimer.current) }
   }, [])
 
   const selected = snapshot.selectedPad
@@ -81,14 +96,14 @@ export default function App() {
     <section className="pads" aria-label="Sixteen drum pads">{snapshot.pads.map((pad) =>
       <button key={pad.midiNote}
         data-pad-index={pad.index}
-        className={'pad '+(pad.index === selected ? 'selected ' : '')+(pad.status === 'ready' ? 'loaded ' : '')+(pad.muted ? 'muted ' : '')+(pad.solo ? 'solo' : '')}
-        onClick={() => { setContext(null); setPending(null); setOperationError(''); void selectPad(pad.index); if (pad.status === 'ready') void audition(pad.index) }}
+        className={'pad '+(pad.index === selected ? 'selected ' : '')+(pad.status === 'ready' ? 'loaded ' : '')+(pad.muted ? 'muted ' : '')+(pad.solo ? 'solo ' : '')+(pad.midiActive ? 'midi-trigger ' : '')+(auditionFlash === pad.index ? 'audition-trigger' : '')}
+        onClick={() => { setContext(null); setPending(null); setOperationError(''); void selectPad(pad.index); if (pad.status === 'ready') { void audition(pad.index); setAuditionFlash(pad.index); window.clearTimeout(auditionTimer.current); auditionTimer.current = window.setTimeout(() => setAuditionFlash(null), 180) } }}
         onContextMenu={event => { event.preventDefault(); setPending(null); setContext({ pad: pad.index, x: event.clientX, y: event.clientY }); void selectPad(pad.index) }}
         onDragOver={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' } }}
         onDrop={event => { event.preventDefault(); event.stopPropagation(); handleDroppedFile(pad.index, event.dataTransfer.files[0]) }}
         aria-label={'Pad '+(pad.index+1)+', MIDI note '+pad.midiNote+', '+pad.status+(pad.muted ? ', muted' : '')+(pad.solo ? ', solo' : '')+'; left-click to audition, right-click for options'}
         aria-pressed={pad.index === selected}>
-        <span>{String(pad.index+1).padStart(2,'0')} · {dropProgress?.pad === pad.index ? 'IMPORT '+dropProgress.percent+'%' : pad.muted ? 'MUTED' : pad.solo ? 'SOLO' : pad.status.toUpperCase()}</span>
+        <span>{String(pad.index+1).padStart(2,'0')} · {dropProgress?.pad === pad.index ? 'IMPORT '+dropProgress.percent+'%' : pad.midiActive ? 'MIDI' : auditionFlash === pad.index ? 'AUDITION' : pad.muted ? 'MUTED' : pad.solo ? 'SOLO' : pad.status.toUpperCase()}</span>
         <b>{pad.sampleName || 'UNASSIGNED'}</b>
         <span>MIDI {pad.midiNote}</span>
       </button>)}</section>

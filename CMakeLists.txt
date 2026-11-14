@@ -68,7 +68,7 @@ add_executable(hyperreal_engine_smoke
     tests/dsp/SampleEngineSmoke.cpp
     packages/engine/SampleEngine.cpp
 )
-target_compile_definitions(hyperreal_engine_smoke PRIVATE JUCE_USE_CURL=0)
+target_compile_definitions(hyperreal_engine_smoke PRIVATE JUCE_USE_CURL=0 HYPERREAL_ENGINE_TEST_HOOKS=1)
 target_link_libraries(hyperreal_engine_smoke PRIVATE
     juce::juce_audio_formats
     juce::juce_recommended_config_flags

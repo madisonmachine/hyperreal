@@ -64,7 +64,9 @@ int main()
     writeWav (second, 13107);
     writeWav (replacement, 19660);
     juce::MemoryBlock droppedBytes;
-    if (! first.loadFileAsData (droppedBytes))
+    juce::MemoryBlock replacementBytes;
+    if (! first.loadFileAsData (droppedBytes)
+        || ! replacement.loadFileAsData (replacementBytes))
         return 1;
 
     SampleEngine engine;
@@ -98,6 +100,17 @@ int main()
     {
         std::cerr << "Independent pad MIDI scheduling failed\n";
         return 3;
+    }
+    const auto midiSnapshot = engine.getSnapshot (0);
+    const auto midiPadList = midiSnapshot.getProperty ("pads", {});
+    const auto* midiPads = midiPadList.getArray();
+    if (midiPads == nullptr
+        || static_cast<int> (midiPads->getReference (0).getProperty ("midiTriggerCount", 0)) != 1
+        || static_cast<int> (midiPads->getReference (1).getProperty ("midiTriggerCount", 0)) != 1
+        || static_cast<int> (midiPads->getReference (2).getProperty ("midiTriggerCount", 0)) != 0)
+    {
+        std::cerr << "Per-pad MIDI activity counters failed\n";
+        return 41;
     }
 
     engine.prepare (44100.0);
@@ -476,6 +489,72 @@ int main()
     {
         std::cerr << "Invalid dropped sample replaced the playable pad\n";
         return 40;
+    }
+
+    restored.pauseNextDecodeForTest();
+    restored.requestLoadData (3, "cancelled.wav", std::move (replacementBytes));
+    bool decodeStarted = false;
+    for (int attempt = 0; attempt < 200; ++attempt)
+    {
+        if (restored.decodeStartedForTest())
+        {
+            decodeStarted = true;
+            break;
+        }
+        std::this_thread::sleep_for (std::chrono::milliseconds (10));
+    }
+    if (! decodeStarted)
+    {
+        restored.resumeDecodeForTest();
+        std::cerr << "Cancellation test did not reach the decode boundary\n";
+        return 42;
+    }
+    restored.cancelLoad (3);
+    restored.resumeDecodeForTest();
+    std::this_thread::sleep_for (std::chrono::milliseconds (50));
+    if (restored.getSnapshot (3).getProperty ("status", {}).toString() != "ready"
+        || restored.getSnapshot (3).getProperty ("sampleName", {}).toString() != "dragged.wav")
+    {
+        std::cerr << "Cancelled import replaced the playable pad\n";
+        return 43;
+    }
+
+    settings = {};
+    restored.prepare (44100.0);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    restored.process (audio, midi, settings);
+    midi.clear();
+    for (int block = 1; block < 34; ++block)
+        restored.process (audio, midi, settings);
+    restored.process (audio, midi, settings);
+    if (audio.getSample (0, 0) < 0.1f || audio.getSample (0, 0) > 0.2f
+        || audio.getSample (0, 56) > 0.01f
+        || ! near (audio.getSample (0, 100), 0.0f))
+    {
+        std::cerr << "One-shot sample end did not fade to silence\n";
+        return 44;
+    }
+
+    settings[0].voiceLimit = 1;
+    restored.prepare (44100.0);
+    midi.clear();
+    for (int trigger = 0; trigger < 65; ++trigger)
+        midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (64)), 0);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 0), 39.0f))
+    {
+        std::cerr << "Full fade-tail pool cut off an active voice\n";
+        return 45;
+    }
+    midi.clear();
+    for (int block = 0; block < 3; ++block)
+        restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 127), 0.0f))
+    {
+        std::cerr << "Tail-pool overflow did not release the old voice\n";
+        return 46;
     }
 
     std::cout << "SampleEngine multi-pad smoke passed\n";
