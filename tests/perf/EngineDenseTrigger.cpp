@@ -74,5 +74,28 @@ int main()
               << worstMs << " ms worst observed block, "
               << initialPrivateBytes << " to " << finalPrivateBytes
               << " private bytes\n";
+
+    constexpr int editCycles = 5000;
+    auto edit = [&engine, &audio, &midi, &settings] ()
+    {
+        if (! engine.copyPad (0) || ! engine.pastePad (1)
+            || ! engine.swapPads (1, 2) || ! engine.clearPad (2))
+            return false;
+        const auto snapshot = engine.getSnapshot (1);
+        if (snapshot.getProperty ("pads", {}).getArray() == nullptr)
+            return false;
+        engine.process (audio, midi, settings);
+        return true;
+    };
+    for (int cycle = 0; cycle < 100; ++cycle)
+        if (! edit())
+            return 2;
+    const auto beforeEdits = privateBytes();
+    for (int cycle = 0; cycle < editCycles; ++cycle)
+        if (! edit())
+            return 3;
+    const auto afterEdits = privateBytes();
+    std::cout << editCycles << " pad copy/paste/swap/clear and snapshot cycles, "
+              << beforeEdits << " to " << afterEdits << " private bytes\n";
     return 0;
 }
