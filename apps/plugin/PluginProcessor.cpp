@@ -5,9 +5,10 @@
 
 namespace
 {
-constexpr int stateSchemaVersion = 2;
+constexpr int stateSchemaVersion = 3;
 constexpr int padCount = 16;
-constexpr char stateMagic[] = { 'H', 'R', 'P', '2' };
+constexpr char stateMagic[] = { 'H', 'R', 'P', '3' };
+constexpr char phase2Magic[] = { 'H', 'R', 'P', '2' };
 }
 
 HyperrealAudioProcessor::HyperrealAudioProcessor()
@@ -47,10 +48,18 @@ juce::AudioProcessorEditor* HyperrealAudioProcessor::createEditor()
 
 juce::var HyperrealAudioProcessor::getSnapshot() const
 {
-    auto snapshot = engine.getSnapshot();
+    auto snapshot = engine.getSnapshot (selectedPad.load());
     snapshot.getDynamicObject()->setProperty (
         "masterGain", parameters.getRawParameterValue ("master.gain.v1")->load());
     return snapshot;
+}
+
+bool HyperrealAudioProcessor::selectPad (int pad) noexcept
+{
+    if (pad < 0 || pad >= padCount)
+        return false;
+    selectedPad.store (pad);
+    return true;
 }
 
 bool HyperrealAudioProcessor::setMasterGain (const juce::var& command)
@@ -120,9 +129,15 @@ void HyperrealAudioProcessor::setStateInformation (const void* data, int size)
 
     juce::MemoryInputStream input (data, static_cast<size_t> (size), false);
     char magic[4] {};
-    if (input.read (magic, sizeof (magic)) != sizeof (magic)
-        || std::memcmp (magic, stateMagic, sizeof (magic)) != 0
-        || input.readInt() != stateSchemaVersion)
+    if (input.read (magic, sizeof (magic)) != sizeof (magic))
+        return;
+
+    const auto version = input.readInt();
+    const auto phase3 = std::memcmp (magic, stateMagic, sizeof (magic)) == 0
+                        && version == stateSchemaVersion;
+    const auto phase2 = std::memcmp (magic, phase2Magic, sizeof (magic)) == 0
+                        && version == 2;
+    if (! phase3 && ! phase2)
         return;
 
     const auto parameterSize = input.readInt();
@@ -136,8 +151,9 @@ void HyperrealAudioProcessor::setStateInformation (const void* data, int size)
 
     const auto snapshot = juce::ValueTree::readFromData (parameterBytes.getData(), parameterBytes.getSize());
     if (! snapshot.hasType ("HYPERREAL_STATE")
-        || static_cast<int> (snapshot.getProperty ("schema_version", 0)) != stateSchemaVersion
-        || ! engine.restoreSampleState (input))
+        || static_cast<int> (snapshot.getProperty ("schema_version", 0)) != version
+        || ! (phase3 ? engine.restoreSampleState (input)
+                     : engine.restorePhase2SampleState (input)))
         return;
 
     parameters.replaceState (snapshot);

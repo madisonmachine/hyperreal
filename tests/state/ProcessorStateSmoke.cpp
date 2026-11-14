@@ -74,6 +74,40 @@ int main()
     original.getStateInformation (state);
     file.deleteFile();
 
+    // Build a Phase 2 envelope from the saved parameter tree and the known sample.
+    // The previous release stored one sample directly after the HRP2 header.
+    juce::MemoryInputStream stateReader (state.getData(), state.getSize(), false);
+    char stateHeader[4] {};
+    stateReader.read (stateHeader, 4);
+    stateReader.readInt();
+    const auto parameterSize = stateReader.readInt();
+    juce::MemoryBlock parameterBytes (static_cast<size_t> (parameterSize));
+    stateReader.read (parameterBytes.getData(), parameterSize);
+    auto phase2Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
+                                                           parameterBytes.getSize());
+    phase2Parameters.setProperty ("schema_version", 2, nullptr);
+    juce::MemoryBlock phase2ParameterBytes;
+    {
+        juce::MemoryOutputStream parametersOutput (phase2ParameterBytes, false);
+        phase2Parameters.writeToStream (parametersOutput);
+    }
+    juce::MemoryBlock phase2State;
+    {
+        juce::MemoryOutputStream output (phase2State, false);
+        output.write ("HRP2", 4);
+        output.writeInt (2);
+        output.writeInt (static_cast<int> (phase2ParameterBytes.getSize()));
+        output.write (phase2ParameterBytes.getData(), phase2ParameterBytes.getSize());
+        output.writeByte (1);
+        output.writeString ("phase2-legacy.wav");
+        output.writeDouble (44100.0);
+        output.writeInt (1);
+        output.writeInt (frames);
+        for (int frame = 0; frame < frames; ++frame)
+            output.writeFloat (static_cast<float> (
+                static_cast<int> (std::sin (frame * 0.1) * 16000.0) / 32768.0));
+    }
+
     HyperrealAudioProcessor restored;
     restored.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
     restored.prepareToPlay (44100.0, 128);
@@ -82,6 +116,14 @@ int main()
         || std::abs (static_cast<double> (snapshot.getProperty ("masterGain", 0.0)) - 0.5) > 0.001)
     {
         std::cerr << "Full project state did not restore\n";
+        return 1;
+    }
+    restored.setStateInformation (state.getData(), static_cast<int> (state.getSize()) - 1);
+    if (restored.getSnapshot().getProperty ("status", {}).toString() != "ready"
+        || std::abs (static_cast<double> (
+            restored.getSnapshot().getProperty ("masterGain", 0.0)) - 0.5) > 0.001)
+    {
+        std::cerr << "Malformed state replaced the active project\n";
         return 1;
     }
 
@@ -93,6 +135,24 @@ int main()
     if (magnitude < 0.15f || magnitude > 0.3f)
     {
         std::cerr << "Restored playback or master gain failed: " << magnitude << "\n";
+        return 1;
+    }
+
+    HyperrealAudioProcessor migrated;
+    migrated.setStateInformation (phase2State.getData(), static_cast<int> (phase2State.getSize()));
+    migrated.prepareToPlay (44100.0, 128);
+    if (migrated.getSnapshot().getProperty ("status", {}).toString() != "ready"
+        || ! migrated.selectPad (1)
+        || migrated.getSnapshot().getProperty ("status", {}).toString() != "empty")
+    {
+        std::cerr << "Phase 2 project migration failed\n";
+        return 1;
+    }
+    migrated.selectPad (0);
+    migrated.processBlock (audio, midi);
+    if (audio.getMagnitude (0, 0, 128) < 0.15f)
+    {
+        std::cerr << "Migrated Phase 2 sample did not play\n";
         return 1;
     }
 

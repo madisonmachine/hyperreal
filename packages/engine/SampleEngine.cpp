@@ -1,4 +1,4 @@
-#include "SampleEngine.h"
+﻿#include "SampleEngine.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -7,12 +7,30 @@
 namespace
 {
 constexpr int maxChannels = 2;
+constexpr int maxVoicesPerPad = 4;
 constexpr double maxDurationSeconds = 60.0;
 constexpr juce::int64 maxInputBytes = 128 * 1024 * 1024;
+constexpr juce::int64 maxDecodedSampleBytes = 128 * 1024 * 1024;
+constexpr juce::int64 maxKitBytes = 512 * 1024 * 1024;
+
+juce::int64 sampleBytes (const juce::AudioBuffer<float>& audio)
+{
+    return static_cast<juce::int64> (audio.getNumChannels())
+           * audio.getNumSamples() * static_cast<int> (sizeof (float));
+}
 }
 
 SampleEngine::SampleEngine()
 {
+    for (int pad = 0; pad < padCount; ++pad)
+    {
+        activeSamples[pad].store (nullptr);
+        auditionCounters[pad].store (0);
+        status[pad] = "empty";
+        message[pad] = "Load WAV, AIFF or FLAC to begin.";
+    }
+    for (auto& pointer : voicePointers)
+        pointer.store (nullptr);
     worker = std::thread ([this] { workerLoop(); });
 }
 
@@ -30,63 +48,123 @@ SampleEngine::~SampleEngine()
 void SampleEngine::prepare (double hostSampleRate) noexcept
 {
     hostRate = hostSampleRate > 0.0 ? hostSampleRate : 44100.0;
-    voice = nullptr;
-    voicePointer.store (nullptr);
-    position = 0.0;
+    for (int pad = 0; pad < padCount; ++pad)
+        auditionSeen[pad] = auditionCounters[pad].load();
+    for (int voiceIndex = 0; voiceIndex < maxVoices; ++voiceIndex)
+    {
+        voices[voiceIndex] = {};
+        voicePointers[voiceIndex].store (nullptr);
+    }
+    nextSequence = 1;
 }
 
-void SampleEngine::requestLoad (juce::File file)
+void SampleEngine::requestLoad (int pad, juce::File file)
 {
+    if (pad < 0 || pad >= padCount)
+        return;
     {
         std::lock_guard lock (controlMutex);
-        pendingFile = std::move (file);
-        pendingLoad = true;
-        status = "loading";
-        message = "Decoding sample on a worker thread.";
+        pendingFiles[pad] = std::move (file);
+        pendingLoads[pad] = true; // Latest request wins for this pad only.
+        ++loadGenerations[pad];
+        status[pad] = "loading";
+        message[pad] = "Decoding sample on a worker thread.";
     }
     controlChanged.notify_one();
 }
 
-void SampleEngine::requestAudition() noexcept
+void SampleEngine::cancelLoad (int pad)
 {
-    auditionCounter.fetch_add (1);
+    if (pad < 0 || pad >= padCount)
+        return;
+    std::lock_guard lock (controlMutex);
+    pendingLoads[pad] = false;
+    ++loadGenerations[pad]; // Invalidates any decode already in flight.
+    status[pad] = current[pad] != nullptr ? "ready" : "empty";
+    message[pad] = "Sample load cancelled.";
 }
 
-void SampleEngine::startVoice (float velocity) noexcept
+void SampleEngine::requestAudition (int pad) noexcept
 {
-    voice = activeSample.load();
-    voicePointer.store (voice);
-    position = 0.0;
-    voiceGain = std::clamp (velocity, 0.0f, 1.0f);
+    if (pad >= 0 && pad < padCount)
+        auditionCounters[pad].fetch_add (1);
+}
+
+void SampleEngine::startVoice (int pad, float velocity) noexcept
+{
+    const auto* sample = activeSamples[pad].load();
+    if (sample == nullptr)
+        return;
+
+    int freeVoice = -1;
+    int oldestPadVoice = -1;
+    int oldestVoice = -1;
+    int activePadVoices = 0;
+    for (int index = 0; index < maxVoices; ++index)
+    {
+        const auto& candidate = voices[index];
+        if (candidate.sample == nullptr)
+        {
+            if (freeVoice < 0)
+                freeVoice = index;
+            continue;
+        }
+        if (oldestVoice < 0 || candidate.sequence < voices[oldestVoice].sequence)
+            oldestVoice = index;
+        if (candidate.pad == pad)
+        {
+            ++activePadVoices;
+            if (oldestPadVoice < 0 || candidate.sequence < voices[oldestPadVoice].sequence)
+                oldestPadVoice = index;
+        }
+    }
+
+    const auto chosen = activePadVoices >= maxVoicesPerPad ? oldestPadVoice
+                       : freeVoice >= 0 ? freeVoice : oldestVoice;
+    if (chosen < 0)
+        return;
+
+    voices[chosen] = { sample, 0.0, std::clamp (velocity, 0.0f, 1.0f),
+                       pad, nextSequence++ };
+    voicePointers[chosen].store (sample);
 }
 
 void SampleEngine::renderRange (juce::AudioBuffer<float>& output, int begin, int end) noexcept
 {
-    if (voice == nullptr || output.getNumChannels() < 2)
+    if (output.getNumChannels() < 2)
         return;
-
     auto* left = output.getWritePointer (0);
     auto* right = output.getWritePointer (1);
-    const int frames = voice->audio.getNumSamples();
-    const auto* sourceLeft = voice->audio.getReadPointer (0);
-    const auto* sourceRight = voice->audio.getReadPointer (voice->audio.getNumChannels() > 1 ? 1 : 0);
-    const double step = voice->sampleRate / hostRate;
 
-    for (int frame = begin; frame < end; ++frame)
+    for (int voiceIndex = 0; voiceIndex < maxVoices; ++voiceIndex)
     {
-        const auto index = static_cast<int> (position);
-        if (index >= frames)
-        {
-            voice = nullptr;
-            voicePointer.store (nullptr);
-            break;
-        }
+        auto& playing = voices[voiceIndex];
+        if (playing.sample == nullptr)
+            continue;
+        const auto* source = playing.sample;
+        const auto frames = source->audio.getNumSamples();
+        const auto* sourceLeft = source->audio.getReadPointer (0);
+        const auto* sourceRight = source->audio.getReadPointer (
+            source->audio.getNumChannels() > 1 ? 1 : 0);
+        const auto step = source->sampleRate / hostRate;
 
-        const auto next = std::min (index + 1, frames - 1);
-        const auto fraction = static_cast<float> (position - index);
-        left[frame] += (sourceLeft[index] + (sourceLeft[next] - sourceLeft[index]) * fraction) * voiceGain;
-        right[frame] += (sourceRight[index] + (sourceRight[next] - sourceRight[index]) * fraction) * voiceGain;
-        position += step;
+        for (int frame = begin; frame < end; ++frame)
+        {
+            const auto index = static_cast<int> (playing.position);
+            if (index >= frames)
+            {
+                playing.sample = nullptr;
+                voicePointers[voiceIndex].store (nullptr);
+                break;
+            }
+            const auto next = std::min (index + 1, frames - 1);
+            const auto fraction = static_cast<float> (playing.position - index);
+            left[frame] += (sourceLeft[index] + (sourceLeft[next] - sourceLeft[index]) * fraction)
+                           * playing.gain;
+            right[frame] += (sourceRight[index] + (sourceRight[next] - sourceRight[index]) * fraction)
+                            * playing.gain;
+            playing.position += step;
+        }
     }
 }
 
@@ -95,11 +173,14 @@ void SampleEngine::process (juce::AudioBuffer<float>& output, const juce::MidiBu
     callbackActive.store (true);
     output.clear();
 
-    const auto auditionNow = auditionCounter.load();
-    if (auditionNow != auditionSeen)
+    for (int pad = 0; pad < padCount; ++pad)
     {
-        auditionSeen = auditionNow;
-        startVoice (1.0f);
+        const auto now = auditionCounters[pad].load();
+        if (now != auditionSeen[pad])
+        {
+            auditionSeen[pad] = now; // Coalesce multiple UI presses within one block.
+            startVoice (pad, 1.0f);
+        }
     }
 
     int cursor = 0;
@@ -110,46 +191,67 @@ void SampleEngine::process (juce::AudioBuffer<float>& output, const juce::MidiBu
         cursor = eventFrame;
 
         const auto& midiMessage = event.getMessage();
-        if (midiMessage.isNoteOn() && midiMessage.getNoteNumber() == 36 && midiMessage.getVelocity() > 0.0f)
-            startVoice (midiMessage.getFloatVelocity());
+        if (midiMessage.isNoteOn() && midiMessage.getVelocity() > 0.0f)
+        {
+            const auto pad = midiMessage.getNoteNumber() - firstMidiNote;
+            if (pad >= 0 && pad < padCount)
+                startVoice (pad, midiMessage.getFloatVelocity());
+        }
     }
 
     renderRange (output, cursor, output.getNumSamples());
     callbackActive.store (false);
 }
 
-juce::var SampleEngine::getSnapshot() const
+juce::var SampleEngine::getSnapshot (int selectedPad) const
 {
+    selectedPad = std::clamp (selectedPad, 0, padCount - 1);
     std::lock_guard lock (controlMutex);
     auto* object = new juce::DynamicObject();
-    object->setProperty ("schemaVersion", 1);
-    object->setProperty ("status", status);
-    object->setProperty ("message", message);
-    object->setProperty ("sampleName", current != nullptr ? current->name : juce::String());
-    object->setProperty ("sampleRate", current != nullptr ? current->sampleRate : 0.0);
-    object->setProperty ("durationSeconds",
-                         current != nullptr ? current->audio.getNumSamples() / current->sampleRate : 0.0);
+    object->setProperty ("schemaVersion", 2);
+    object->setProperty ("selectedPad", selectedPad);
+    object->setProperty ("status", status[selectedPad]);
+    object->setProperty ("message", message[selectedPad]);
+    object->setProperty ("sampleName", current[selectedPad] != nullptr
+                                           ? current[selectedPad]->name : juce::String());
+    object->setProperty ("sampleRate", current[selectedPad] != nullptr
+                                           ? current[selectedPad]->sampleRate : 0.0);
+    object->setProperty ("durationSeconds", current[selectedPad] != nullptr
+        ? current[selectedPad]->audio.getNumSamples() / current[selectedPad]->sampleRate : 0.0);
+    juce::Array<juce::var> pads;
+    for (int pad = 0; pad < padCount; ++pad)
+    {
+        auto* item = new juce::DynamicObject();
+        item->setProperty ("index", pad);
+        item->setProperty ("midiNote", firstMidiNote + pad);
+        item->setProperty ("status", status[pad]);
+        item->setProperty ("sampleName", current[pad] != nullptr ? current[pad]->name : juce::String());
+        pads.add (juce::var (item));
+    }
+    object->setProperty ("pads", juce::var (pads));
     return juce::var (object);
 }
 
-void SampleEngine::publishSample (std::unique_ptr<Sample> next)
+void SampleEngine::publishSample (int pad, std::unique_ptr<Sample> next)
 {
-    // controlMutex is held. The audio callback reads only immutable sample data.
-    const auto* nextPointer = next.get();
-    activeSample.store (nextPointer);
-    if (current != nullptr)
-        retired.push_back (std::move (current));
-    current = std::move (next);
-    reapRetired();
+    // controlMutex is held. Audio reads immutable samples through atomics.
+    activeSamples[pad].store (next.get());
+    if (current[pad] != nullptr)
+        retired.push_back (std::move (current[pad]));
+    current[pad] = std::move (next);
 }
 
 void SampleEngine::reapRetired()
 {
     if (callbackActive.load())
         return;
-
-    const auto* inVoice = voicePointer.load();
-    std::erase_if (retired, [inVoice] (const auto& item) { return item.get() != inVoice; });
+    std::erase_if (retired, [this] (const auto& item)
+    {
+        for (const auto& pointer : voicePointers)
+            if (pointer.load() == item.get())
+                return false;
+        return true;
+    });
 }
 
 void SampleEngine::workerLoop()
@@ -160,19 +262,37 @@ void SampleEngine::workerLoop()
     for (;;)
     {
         juce::File file;
+        int pad = -1;
+        juce::uint64 generation = 0;
         {
             std::unique_lock lock (controlMutex);
             controlChanged.wait_for (lock, std::chrono::milliseconds (250),
-                                     [this] { return stopping || pendingLoad; });
+                                     [this]
+                                     {
+                                         return stopping || std::any_of (pendingLoads.begin(),
+                                                                         pendingLoads.end(),
+                                                                         [] (bool pending) { return pending; });
+                                     });
             if (stopping)
                 break;
-            if (! pendingLoad)
+            for (int offset = 1; offset <= padCount; ++offset)
+            {
+                const auto candidate = (lastDequeuedPad + offset) % padCount;
+                if (pendingLoads[candidate])
+                {
+                    pad = candidate;
+                    lastDequeuedPad = pad;
+                    break;
+                }
+            }
+            if (pad < 0)
             {
                 reapRetired();
                 continue;
             }
-            file = pendingFile;
-            pendingLoad = false;
+            file = pendingFiles[pad];
+            generation = loadGenerations[pad];
+            pendingLoads[pad] = false;
         }
 
         juce::String error;
@@ -185,12 +305,14 @@ void SampleEngine::workerLoop()
         else if (auto reader = std::unique_ptr<juce::AudioFormatReader> (formats.createReaderFor (file)))
         {
             if (reader->numChannels < 1 || reader->numChannels > maxChannels
-                || reader->sampleRate <= 0.0
+                || ! std::isfinite (reader->sampleRate) || reader->sampleRate <= 0.0
                 || reader->lengthInSamples < 1
                 || reader->lengthInSamples > maxDurationSeconds * reader->sampleRate
-                || reader->lengthInSamples > std::numeric_limits<int>::max())
+                || reader->lengthInSamples > std::numeric_limits<int>::max()
+                || reader->lengthInSamples * static_cast<juce::int64> (reader->numChannels) * 4
+                    > maxDecodedSampleBytes)
             {
-                error = "Sample channels, rate or duration are unsupported.";
+                error = "Sample channels, rate, duration or decoded size are unsupported.";
             }
             else
             {
@@ -213,49 +335,71 @@ void SampleEngine::workerLoop()
 
         {
             std::lock_guard lock (controlMutex);
+            if (generation != loadGenerations[pad])
+            {
+                reapRetired();
+                continue;
+            }
             if (decoded != nullptr)
             {
-                publishSample (std::move (decoded));
-                status = "ready";
-                message = "MIDI note 36 or AUDITION plays this sample.";
+                auto bytes = sampleBytes (decoded->audio);
+                for (int other = 0; other < padCount; ++other)
+                    if (other != pad && current[other] != nullptr)
+                        bytes += sampleBytes (current[other]->audio);
+                if (bytes > maxKitBytes)
+                {
+                    decoded.reset();
+                    error = "The 16-pad sample memory limit is 512 MB.";
+                }
+            }
+            if (decoded != nullptr)
+            {
+                publishSample (pad, std::move (decoded));
+                status[pad] = "ready";
+                message[pad] = "MIDI note " + juce::String (firstMidiNote + pad)
+                               + " or AUDITION plays this sample.";
             }
             else
             {
-                status = current != nullptr ? "ready" : "error";
-                message = error;
+                status[pad] = current[pad] != nullptr ? "ready" : "error";
+                message[pad] = error;
             }
             reapRetired();
         }
     }
 }
 
+void SampleEngine::writeSample (juce::OutputStream& output, const Sample* sample)
+{
+    output.writeByte (sample != nullptr ? 1 : 0);
+    if (sample == nullptr)
+        return;
+    output.writeString (sample->name);
+    output.writeDouble (sample->sampleRate);
+    output.writeInt (sample->audio.getNumChannels());
+    output.writeInt (sample->audio.getNumSamples());
+    for (int channel = 0; channel < sample->audio.getNumChannels(); ++channel)
+        for (int frame = 0; frame < sample->audio.getNumSamples(); ++frame)
+            output.writeFloat (sample->audio.getSample (channel, frame));
+}
+
 void SampleEngine::writeSampleState (juce::OutputStream& output) const
 {
     std::lock_guard lock (controlMutex);
-    output.writeByte (current != nullptr ? 1 : 0);
-    if (current == nullptr)
-        return;
-
-    output.writeString (current->name);
-    output.writeDouble (current->sampleRate);
-    output.writeInt (current->audio.getNumChannels());
-    output.writeInt (current->audio.getNumSamples());
-    for (int channel = 0; channel < current->audio.getNumChannels(); ++channel)
-        for (int frame = 0; frame < current->audio.getNumSamples(); ++frame)
-            output.writeFloat (current->audio.getSample (channel, frame));
+    for (const auto& sample : current)
+        writeSample (output, sample.get());
 }
 
-bool SampleEngine::restoreSampleState (juce::InputStream& input)
+bool SampleEngine::readSample (juce::InputStream& input, std::unique_ptr<Sample>& sample,
+                               juce::int64& decodedBytes)
 {
     if (input.getNumBytesRemaining() < 1)
         return false;
     const auto present = input.readByte();
     if (present == 0)
     {
-        std::lock_guard lock (controlMutex);
-        publishSample (nullptr);
-        status = "empty";
-        message = "Load WAV, AIFF or FLAC to begin.";
+        sample.reset();
+        decodedBytes = 0;
         return true;
     }
     if (present != 1)
@@ -266,10 +410,14 @@ bool SampleEngine::restoreSampleState (juce::InputStream& input)
     restored->sampleRate = input.readDouble();
     const auto channels = input.readInt();
     const auto frames = input.readInt();
-    if (channels < 1 || channels > maxChannels || frames < 1
+    const auto bytes = static_cast<juce::int64> (channels) * frames * 4;
+    if (restored->name.length() > 255
+        || channels < 1 || channels > maxChannels || frames < 1
+        || ! std::isfinite (restored->sampleRate)
         || restored->sampleRate <= 0.0 || restored->sampleRate > 384000.0
         || frames > maxDurationSeconds * restored->sampleRate
-        || input.getNumBytesRemaining() < static_cast<juce::int64> (channels) * frames * 4)
+        || bytes > maxDecodedSampleBytes
+        || input.getNumBytesRemaining() < bytes)
         return false;
 
     restored->audio.setSize (channels, frames);
@@ -281,12 +429,56 @@ bool SampleEngine::restoreSampleState (juce::InputStream& input)
                 return false;
             restored->audio.setSample (channel, frame, value);
         }
+    sample = std::move (restored);
+    decodedBytes = bytes;
+    return true;
+}
 
+bool SampleEngine::restoreSampleState (juce::InputStream& input)
+{
+    std::array<std::unique_ptr<Sample>, padCount> restored;
+    juce::int64 totalBytes = 0;
+    for (auto& sample : restored)
     {
-        std::lock_guard lock (controlMutex);
-        publishSample (std::move (restored));
-        status = "ready";
-        message = "Restored from the DAW project state.";
+        juce::int64 bytes = 0;
+        if (! readSample (input, sample, bytes))
+            return false;
+        totalBytes += bytes;
+        if (totalBytes > maxKitBytes)
+            return false;
     }
+    if (input.getNumBytesRemaining() != 0)
+        return false;
+
+    std::lock_guard lock (controlMutex);
+    for (int pad = 0; pad < padCount; ++pad)
+    {
+        publishSample (pad, std::move (restored[pad]));
+        status[pad] = current[pad] != nullptr ? "ready" : "empty";
+        message[pad] = current[pad] != nullptr ? "Restored from the DAW project state."
+                                              : "Load WAV, AIFF or FLAC to begin.";
+    }
+    reapRetired();
+    return true;
+}
+
+bool SampleEngine::restorePhase2SampleState (juce::InputStream& input)
+{
+    std::unique_ptr<Sample> restored;
+    juce::int64 bytes = 0;
+    if (! readSample (input, restored, bytes) || input.getNumBytesRemaining() != 0)
+        return false;
+    std::lock_guard lock (controlMutex);
+    publishSample (0, std::move (restored));
+    status[0] = current[0] != nullptr ? "ready" : "empty";
+    message[0] = current[0] != nullptr ? "Restored from a Phase 2 project."
+                                      : "Load WAV, AIFF or FLAC to begin.";
+    for (int pad = 1; pad < padCount; ++pad)
+    {
+        publishSample (pad, nullptr);
+        status[pad] = "empty";
+        message[pad] = "Load WAV, AIFF or FLAC to begin.";
+    }
+    reapRetired();
     return true;
 }

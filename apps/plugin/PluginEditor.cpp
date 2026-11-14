@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include <BinaryData.h>
+#include <cmath>
 #include <cstring>
 
 namespace
@@ -9,6 +10,22 @@ std::vector<std::byte> copyResource (const char* data, int size)
     std::vector<std::byte> bytes (static_cast<size_t> (size));
     std::memcpy (bytes.data(), data, static_cast<size_t> (size));
     return bytes;
+}
+
+std::optional<int> padFromCommand (const juce::var& command)
+{
+    if (! command.isObject()
+        || static_cast<int> (command.getProperty ("schemaVersion", 0)) != 2)
+        return std::nullopt;
+    const auto value = command.getProperty ("pad", -1);
+    if (! (value.isInt() || value.isInt64() || value.isDouble()))
+        return std::nullopt;
+    const auto number = static_cast<double> (value);
+    if (! std::isfinite (number) || std::trunc (number) != number
+        || number < 0.0 || number >= SampleEngine::padCount)
+        return std::nullopt;
+    const auto pad = static_cast<int> (number);
+    return pad;
 }
 }
 
@@ -47,10 +64,28 @@ HyperrealAudioProcessorEditor::HyperrealAudioProcessorEditor (HyperrealAudioProc
                    .withNativeFunction ("setMasterGain", [this] (const auto& arguments, auto complete)
                    {
                        complete (arguments.size() == 1 && processor.setMasterGain (arguments[0]));
-                   })                   .withNativeFunction ("audition", [this] (const auto&, auto complete)
+                   })
+                   .withNativeFunction ("selectPad", [this] (const auto& arguments, auto complete)
                    {
-                       processor.requestAudition();
-                       complete (true);
+                       const auto pad = arguments.size() == 1
+                                          ? padFromCommand (arguments[0]) : std::nullopt;
+                       complete (pad.has_value() && processor.selectPad (*pad));
+                   })
+                   .withNativeFunction ("cancelLoad", [this] (const auto& arguments, auto complete)
+                   {
+                       const auto pad = arguments.size() == 1
+                                          ? padFromCommand (arguments[0]) : std::nullopt;
+                       if (pad.has_value())
+                           processor.cancelSampleLoad (*pad);
+                       complete (pad.has_value());
+                   })
+                   .withNativeFunction ("audition", [this] (const auto& arguments, auto complete)
+                   {
+                       const auto pad = arguments.size() == 1
+                                          ? padFromCommand (arguments[0]) : std::nullopt;
+                       if (pad.has_value())
+                           processor.requestAudition (*pad);
+                       complete (pad.has_value());
                    })
                    .withResourceProvider ([] (const auto& path) { return getResource (path); }))
 {
@@ -69,12 +104,14 @@ void HyperrealAudioProcessorEditor::openSampleChooser()
     if (chooserOpen)
         return;
     chooserOpen = true;
+    const auto targetPad = processor.getSelectedPad();
     chooser = std::make_unique<juce::FileChooser> (
         "Load a sample", juce::File {}, "*.wav;*.aif;*.aiff;*.flac");
 
     chooser->launchAsync (juce::FileBrowserComponent::openMode
                              | juce::FileBrowserComponent::canSelectFiles,
-                         [safeEditor = juce::Component::SafePointer<HyperrealAudioProcessorEditor> (this)]
+                         [safeEditor = juce::Component::SafePointer<HyperrealAudioProcessorEditor> (this),
+                          targetPad]
                          (const juce::FileChooser& finished)
                          {
                              if (auto* editor = safeEditor.getComponent())
@@ -82,7 +119,7 @@ void HyperrealAudioProcessorEditor::openSampleChooser()
                                  editor->chooserOpen = false;
                                  const auto selected = finished.getResult();
                                  if (selected.existsAsFile())
-                                     editor->processor.requestSampleLoad (selected);
+                                     editor->processor.requestSampleLoad (targetPad, selected);
                              }
                          });
 }

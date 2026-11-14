@@ -1,6 +1,6 @@
 # State and parameter contract
 
-Version 2 host-state slice, 14 November 2026. The JSON Schemas in `schemas` describe planned kit and project records; they are not yet runtime serializers.
+Version 3 host-state foundation, 14 November 2026. The JSON Schemas in `schemas` describe planned kit and project records; they are not yet runtime serializers.
 
 ## Host parameter IDs
 
@@ -12,7 +12,9 @@ The `.v1` suffix is part of the immutable host ID. Do not rename or repurpose an
 
 ## Current host serialization
 
-The binary host state starts with `HRP2`, format version 2, and a length-prefixed `HYPERREAL_STATE` JUCE ValueTree with `schema_version = 2`. It then stores a presence flag, sample name, source rate, channel count, frame count and decoded float data for pad 1. No source path is required to restore the current sound. The reader validates sizes and sample values before publishing the restored sample. Phase 1 parameter-only ValueTrees with `schema_version = 1` remain readable. Unsupported or malformed state is ignored without replacing active state.
+The binary host state starts with `HRP3`, format version 3, and a length-prefixed `HYPERREAL_STATE` JUCE ValueTree with `schema_version = 3`. It then stores 16 fixed-order pad records. Each record has a presence flag and, when loaded, a sample name, source rate, channel count, frame count and decoded float data. No source path is required to restore the current sound. The reader validates all samples and the 512 MB aggregate limit before publishing any pad. Phase 2 `HRP2` states are read as pad 1 plus 15 empty pads; Phase 1 parameter-only ValueTrees remain readable. Unsupported or malformed state is ignored without replacing active samples.
+
+The UI snapshot uses bridge schema version 2, with selected pad index 0–15 and 16 pad status/name records. Selection is an editor control and is not yet persisted. LOAD and AUDITION target a pad; host parameter IDs remain stable. The Phase 3 voice pool is currently fixed at four voices per pad and 64 globally. One-shot note-off is ignored, and the oldest voice in a pad is replaced when that pad reaches four voices. Click-free interruption, gated mode and choke semantics remain Phase 3 work.
 
 ## Planned portable data
 

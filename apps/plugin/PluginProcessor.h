@@ -27,8 +27,13 @@ public:
     void getStateInformation (juce::MemoryBlock& destination) override;
     void setStateInformation (const void* data, int size) override;
 
-    void requestSampleLoad (juce::File file) { engine.requestLoad (std::move (file)); }
-    void requestAudition() noexcept { engine.requestAudition(); }
+    void requestSampleLoad (int pad, juce::File file) { engine.requestLoad (pad, std::move (file)); }
+    void requestSampleLoad (juce::File file) { requestSampleLoad (0, std::move (file)); }
+    void cancelSampleLoad (int pad) { engine.cancelLoad (pad); }
+    void requestAudition (int pad) noexcept { engine.requestAudition (pad); }
+    void requestAudition() noexcept { requestAudition (selectedPad.load()); }
+    bool selectPad (int pad) noexcept;
+    int getSelectedPad() const noexcept { return selectedPad.load(); }
     juce::var getSnapshot() const;
     bool setMasterGain (const juce::var& command);
 
@@ -38,6 +43,7 @@ private:
 
     juce::AudioProcessorValueTreeState parameters;
     SampleEngine engine;
+    std::atomic<int> selectedPad { 0 };
     juce::SmoothedValue<float> smoothedMasterGain;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HyperrealAudioProcessor)
 };

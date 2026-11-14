@@ -1,4 +1,4 @@
-#include "../../packages/engine/SampleEngine.h"
+﻿#include "../../packages/engine/SampleEngine.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 #include <chrono>
@@ -14,92 +14,159 @@ void write16 (std::ofstream& file, unsigned int value)
     file.put (static_cast<char> (value & 0xff));
     file.put (static_cast<char> ((value >> 8) & 0xff));
 }
-
 void write32 (std::ofstream& file, unsigned int value)
 {
     write16 (file, value & 0xffff);
     write16 (file, value >> 16);
 }
-
-bool waitForReady (SampleEngine& engine)
+void writeWav (const juce::File& file, int value)
+{
+    constexpr int frames = 4410;
+    std::ofstream wav (file.getFullPathName().toStdString(), std::ios::binary);
+    wav.write ("RIFF", 4);
+    write32 (wav, 36 + frames * 2);
+    wav.write ("WAVEfmt ", 8);
+    write32 (wav, 16);
+    write16 (wav, 1);
+    write16 (wav, 1);
+    write32 (wav, 44100);
+    write32 (wav, 88200);
+    write16 (wav, 2);
+    write16 (wav, 16);
+    wav.write ("data", 4);
+    write32 (wav, frames * 2);
+    for (int frame = 0; frame < frames; ++frame)
+        write16 (wav, static_cast<unsigned int> (value));
+}
+bool waitForReady (SampleEngine& engine, int pad)
 {
     for (int attempt = 0; attempt < 300; ++attempt)
     {
-        if (engine.getSnapshot().getProperty ("status", {}).toString() == "ready")
+        if (engine.getSnapshot (pad).getProperty ("status", {}).toString() == "ready")
             return true;
         std::this_thread::sleep_for (std::chrono::milliseconds (10));
     }
     return false;
 }
+bool near (float actual, float expected)
+{
+    return std::abs (actual - expected) < 0.02f;
+}
 }
 
 int main()
 {
-    constexpr int frames = 4410;
-    const auto file = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                          .getChildFile ("hyperreal-engine-smoke.wav");
-    {
-        std::ofstream wav (file.getFullPathName().toStdString(), std::ios::binary);
-        wav.write ("RIFF", 4);
-        write32 (wav, 36 + frames * 2);
-        wav.write ("WAVEfmt ", 8);
-        write32 (wav, 16);
-        write16 (wav, 1);
-        write16 (wav, 1);
-        write32 (wav, 44100);
-        write32 (wav, 88200);
-        write16 (wav, 2);
-        write16 (wav, 16);
-        wav.write ("data", 4);
-        write32 (wav, frames * 2);
-        for (int frame = 0; frame < frames; ++frame)
-        {
-            const auto value = static_cast<int> (std::sin (frame * 0.1) * 16000.0);
-            write16 (wav, static_cast<unsigned int> (value));
-        }
-    }
+    const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory);
+    const auto first = folder.getChildFile ("hyperreal-engine-pad01.wav");
+    const auto second = folder.getChildFile ("hyperreal-engine-pad02.wav");
+    const auto replacement = folder.getChildFile ("hyperreal-engine-replacement.wav");
+    writeWav (first, 6553);
+    writeWav (second, 13107);
+    writeWav (replacement, 19660);
 
     SampleEngine engine;
     engine.prepare (44100.0);
-    engine.requestLoad (file);
-    if (! waitForReady (engine))
+    engine.requestLoad (0, first);
+    engine.requestLoad (1, second);
+    if (! waitForReady (engine, 0) || ! waitForReady (engine, 1))
     {
-        std::cerr << "Sample import failed\n";
-        return 1;
+        std::cerr << "Queued pad imports failed\n";
+        return 2;
+    }
+    const auto selectedSnapshot = engine.getSnapshot (1);
+    const auto padList = selectedSnapshot.getProperty ("pads", {});
+    const auto pads = padList.getArray();
+    if (pads == nullptr || pads->size() != SampleEngine::padCount
+        || selectedSnapshot.getProperty ("sampleName", {}).toString() != second.getFileName())
+    {
+        std::cerr << "Pad snapshot contract failed\n";
+        return 2;
     }
 
     juce::AudioBuffer<float> audio (2, 128);
     juce::MidiBuffer midi;
-    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (100)), 64);
+    midi.addEvent (juce::MidiMessage::controllerEvent (1, 1, 64), 16);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 64);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 37, static_cast<juce::uint8> (127)), 96);
     engine.process (audio, midi);
-    if (audio.getMagnitude (0, 0, 64) != 0.0f || audio.getMagnitude (0, 64, 64) < 0.1f)
+    if (! near (audio.getSample (0, 0), 0.0f)
+        || ! near (audio.getSample (0, 64), 0.2f)
+        || ! near (audio.getSample (0, 96), 0.6f))
     {
-        std::cerr << "MIDI sample offset or playback failed\n";
-        return 1;
+        std::cerr << "Independent pad MIDI scheduling failed\n";
+        return 3;
+    }
+
+    engine.prepare (44100.0);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 32);
+    engine.process (audio, midi);
+    if (! near (audio.getSample (0, 40), 0.4f))
+    {
+        std::cerr << "Overlapping voices failed\n";
+        return 4;
+    }
+
+    engine.requestLoad (0, replacement);
+    if (! waitForReady (engine, 0))
+        return 5;
+    midi.clear();
+    engine.process (audio, midi);
+    if (! near (audio.getSample (0, 0), 0.4f))
+    {
+        std::cerr << "Replacement interrupted old voices\n";
+        return 6;
     }
 
     juce::MemoryBlock state;
-    juce::MemoryOutputStream output (state, false);
-    engine.writeSampleState (output);
+    {
+        juce::MemoryOutputStream output (state, false);
+        engine.writeSampleState (output);
+    }
     juce::MemoryInputStream input (state.getData(), state.getSize(), false);
     SampleEngine restored;
     restored.prepare (44100.0);
     if (! restored.restoreSampleState (input)
-        || restored.getSnapshot().getProperty ("status", {}).toString() != "ready")
+        || restored.getSnapshot (0).getProperty ("status", {}).toString() != "ready"
+        || restored.getSnapshot (1).getProperty ("status", {}).toString() != "ready"
+        || restored.getSnapshot (2).getProperty ("status", {}).toString() != "empty")
     {
-        std::cerr << "Embedded sample state failed\n";
-        return 1;
+        std::cerr << "Multi-pad embedded state failed\n";
+        return 7;
     }
 
-    restored.requestLoad (file.getSiblingFile ("missing.txt"));
+    first.deleteFile();
+    second.deleteFile();
+    replacement.deleteFile();
+    restored.requestLoad (1, second);
     std::this_thread::sleep_for (std::chrono::milliseconds (100));
-    if (restored.getSnapshot().getProperty ("status", {}).toString() != "ready")
+    if (restored.getSnapshot (1).getProperty ("status", {}).toString() != "ready")
     {
-        std::cerr << "Invalid import replaced active sample\n";
-        return 1;
+        std::cerr << "Invalid import replaced active pad\n";
+        return 8;
     }
 
-    file.deleteFile();
-    std::cout << "SampleEngine smoke passed\n";
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 37, static_cast<juce::uint8> (127)), 0);
+    restored.process (audio, midi);
+    if (! near (audio.getSample (0, 0), 1.0f))
+    {
+        std::cerr << "Restored pads did not play\n";
+        return 9;
+    }
+
+    restored.prepare (44100.0);
+    midi.clear();
+    for (int voice = 0; voice < 5; ++voice)
+        midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    restored.process (audio, midi);
+    if (! near (audio.getSample (0, 0), 2.4f))
+    {
+        std::cerr << "Per-pad voice bound or deterministic stealing failed\n";
+        return 10;
+    }
+
+    std::cout << "SampleEngine multi-pad smoke passed\n";
     return 0;
 }
