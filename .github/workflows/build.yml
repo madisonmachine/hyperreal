@@ -1,4 +1,4 @@
-name: Build shell
+name: Build and validate
 
 on:
   push:
@@ -11,6 +11,9 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.17.0'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -20,14 +23,23 @@ jobs:
           python -m pip install cmake==3.31.10
           python -c "import cmake; print(cmake.CMAKE_BIN_DIR)" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       - name: Install WebView2 SDK
-        shell: pwsh
+        shell: powershell
         run: |
           Register-PackageSource -ProviderName NuGet -Name nugetRepository -Location 'https://www.nuget.org/api/v2' -Trusted -Force
           Install-Package Microsoft.Web.WebView2 -ProviderName NuGet -Scope CurrentUser -RequiredVersion 1.0.3485.44 -Source nugetRepository -Force -Confirm:$false
+      - name: Build local UI bundle
+        run: |
+          npm ci --prefix packages/ui
+          npm run build --prefix packages/ui
       - name: Configure
         run: cmake --preset windows-x64
-      - name: Build
-        run: cmake --build --preset windows-release
+      - name: Build plugin and tests
+        run: |
+          cmake --build --preset windows-release
+          cmake --build build/windows-x64 --config Release --target hyperreal_engine_smoke
+          cmake --build build/windows-x64 --config Release --target hyperreal_processor_state_smoke
+      - name: Native smoke test
+        run: ctest --test-dir build/windows-x64 -C Release --output-on-failure
       - name: Validate VST3
         shell: pwsh
         run: |
@@ -52,5 +64,5 @@ jobs:
       - name: Upload shell artefacts
         uses: actions/upload-artifact@v4
         with:
-          name: hyperreal-windows-shell
+          name: hyperreal-windows-prototype
           path: build/windows-x64/HYPERREAL_artefacts/Release/
