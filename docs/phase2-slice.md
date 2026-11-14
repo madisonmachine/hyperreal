@@ -24,8 +24,10 @@ The audio callback reads immutable sample data and prepared atomics. It does no 
 - In Cubase Pro 15, LOAD SAMPLE selected a generated local WAV, the editor reported READY, and AUDITION played audibly. A saved Cubase project restored the sample and AUDITION remained audible while the source WAV was moved away from its original path. The generated WAV was then restored.
 - The pull request CI run for the editor fix passed the Release build, native tests and pluginval validation.
 - Prepared the Microsoft x64 Evergreen Standalone Installer in the ignored build area. Its Authenticode signature is valid, and `packaging/windows/Test-OfflineReadiness.ps1` passed checks of its recorded SHA-256, the Release VST3, the local UI assets and the installed Runtime. This was an artifact readiness check on the development machine, not a clean offline installation.
+- In Cubase Pro 15, a saved HYPERREAL project showed READY after reopening. A four-note MIDI 36 clip played four audible tones while the editor was closed, and the custom editor reopened afterward.
+- The built UI entry page has no external URLs. Its JavaScript contains only React diagnostic and XML namespace URLs, with no application fetch, XHR or WebSocket calls in the UI source. No Vite or similar development server was running at inspection time. This supports local operation but does not prove a disconnected launch.
 
 ## Remaining Phase 2 checks
 
 - Verify installed operation on a clean machine with networking disabled. Include the prepared WebView2 standalone prerequisite in the eventual installer and review current redistribution terms.
-- In Cubase Pro 15, verify MIDI note 36 and audio while the editor is closed, then reopen the editor. The Windows computer-use helper was unavailable during this pass.
+- The Windows computer-use helper was unavailable during this pass, so the Cubase interaction checks were performed by the project owner.
