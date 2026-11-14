@@ -20,6 +20,7 @@ The audio callback reads immutable sample data and prepared atomics. It does no 
 - The development machine reports WebView2 Runtime 157.0.4341.46.
 - GitHub Actions passed on `main` for the Phase 1 shell and on pull request #1 for this slice, including the Release build, native tests and headless pluginval validation.
 - The current Release VST3 replaced the superseded per-user v0.1.0 installation. Cubase Pro 15's `vstscanner.exe` reported HYPERREAL v0.2.0 as an Instrument and exited successfully. The installed binary matches the tested Release build by SHA-256.
+- Cubase initially displayed the generic parameter editor. JUCE was trying to load an unbundled `WebView2Loader.dll`; the build now enables static WebView2 loader linkage. The rebuilt Release VST3 passed both native tests and pluginval level 5 editor tests, was reinstalled, and was accepted by the Cubase scanner. Interactive editor confirmation is pending.
 
 ## Remaining Phase 2 checks
 

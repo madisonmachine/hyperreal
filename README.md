@@ -6,7 +6,7 @@ The [product brief](brief.docx) defines functionality, the [design brief](design
 
 ## Windows build
 
-Requirements: Visual Studio 2022 with Desktop development with C++, Git, CMake 3.22 or later, Node 22, and Microsoft.Web.WebView2 SDK 1.0.3485.44. The development machine uses CMake 3.31.10. The WebView2 Runtime is also needed to display the editor; a generic parameter editor is used if the runtime is unavailable.
+Requirements: Visual Studio 2022 with Desktop development with C++, Git, CMake 3.22 or later, Node 22, and Microsoft.Web.WebView2 SDK 1.0.3485.44. The development machine uses CMake 3.31.10. The WebView2 loader is linked statically into the plugin. The WebView2 Runtime is also needed to display the editor; a generic parameter editor is used if the runtime is unavailable.
 
 ```powershell
 Register-PackageSource -ProviderName NuGet -Name nugetRepository -Location 'https://www.nuget.org/api/v2' -Trusted -Force
