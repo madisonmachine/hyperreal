@@ -16,7 +16,12 @@ bool HyperrealAudioProcessorEditor::isSupported()
 {
     return juce::WebBrowserComponent::areOptionsSupported (
         juce::WebBrowserComponent::Options {}
-            .withBackend (juce::WebBrowserComponent::Options::Backend::webview2));
+            .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
+            .withWinWebView2Options (
+                juce::WebBrowserComponent::Options::WinWebView2 {}
+                    .withUserDataFolder (juce::File::getSpecialLocation (
+                        juce::File::SpecialLocationType::tempDirectory)
+                        .getChildFile ("HYPERREAL-WebView2"))));
 }
 
 HyperrealAudioProcessorEditor::HyperrealAudioProcessorEditor (HyperrealAudioProcessor& owner)
