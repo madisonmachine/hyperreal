@@ -2,8 +2,8 @@
 /cmake-build-*/
 /.vs/
 /.idea/
-/node_modules/
-/dist/
+**/node_modules/
+**/dist/
 /.cache/
 /tools/
 /vendor/

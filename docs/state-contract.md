@@ -1,6 +1,6 @@
 # State and parameter contract
 
-Version 1 draft, 13 November 2026. The shell implements the host-parameter subset below. The JSON Schemas in `schemas` describe planned kit and project records; they are not yet runtime serializers.
+Version 2 host-state slice, 14 November 2026. The JSON Schemas in `schemas` describe planned kit and project records; they are not yet runtime serializers.
 
 ## Host parameter IDs
 
@@ -10,9 +10,9 @@ Version 1 draft, 13 November 2026. The shell implements the host-parameter subse
 
 The `.v1` suffix is part of the immutable host ID. Do not rename or repurpose an ID after release. Add a new ID and a migration when semantics change. Parameter range, display unit, smoothing, and ownership for each new control must be documented before it is exposed to a host.
 
-## Current shell serialization
+## Current host serialization
 
-`HYPERREAL_STATE` is a JUCE ValueTree with `schema_version = 1` and AudioProcessorValueTreeState parameter values. Unsupported or malformed state is ignored without replacing active state. This is a minimal Phase 1 state path; it contains no samples or kit content.
+The binary host state starts with `HRP2`, format version 2, and a length-prefixed `HYPERREAL_STATE` JUCE ValueTree with `schema_version = 2`. It then stores a presence flag, sample name, source rate, channel count, frame count and decoded float data for pad 1. No source path is required to restore the current sound. The reader validates sizes and sample values before publishing the restored sample. Phase 1 parameter-only ValueTrees with `schema_version = 1` remain readable. Unsupported or malformed state is ignored without replacing active state.
 
 ## Planned portable data
 

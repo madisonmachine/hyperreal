@@ -1,34 +1,33 @@
 # HYPERREAL
 
-HYPERREAL is a 16-pad drum sampler VST3. Development is currently in Phase 1. The current plugin is a silent shell with 16 pad-level parameters and a temporary generic editor; sample playback and the local React interface are planned for later phases.
+HYPERREAL is a 16-pad drum sampler VST3. The current Phase 2 prototype plays a single sample on pad 1 (MIDI note 36), supports native file selection and audition, and embeds a local React interface. Pads 2–16 are visible but have no sample engine yet.
 
-The source of truth for scope is [brief.docx](brief.docx). [design-brief.txt](design-brief.txt) supplies the retro-hardware design and offline architecture. [plan.docx](plan.docx) gives the phase order. The user-requested change record lives in [changelogs](changelogs).
+The [product brief](brief.docx) defines functionality, the [design brief](design-brief.txt) defines the retro local interface, and the [development plan](plan.docx) defines phase order. Dated entries live in [changelogs](changelogs).
 
 ## Windows build
 
-Requirements: Visual Studio 2022 with the Desktop development with C++ workload, Git, CMake 3.22 or later, and Microsoft.Web.WebView2 SDK 1.0.3485.44 installed for the current user. CMake fetches JUCE at the pinned commit on first configure, so development setup needs network access. Installed plugin operation will be offline.
+Requirements: Visual Studio 2022 with Desktop development with C++, Git, CMake 3.22 or later, Node 22, and Microsoft.Web.WebView2 SDK 1.0.3485.44. The development machine uses CMake 3.31.10. The WebView2 loader is linked statically into the plugin. The WebView2 Runtime is also needed to display the editor; a generic parameter editor is used if the runtime is unavailable.
 
 ```powershell
 Register-PackageSource -ProviderName NuGet -Name nugetRepository -Location 'https://www.nuget.org/api/v2' -Trusted -Force
 Install-Package Microsoft.Web.WebView2 -ProviderName NuGet -Scope CurrentUser -RequiredVersion 1.0.3485.44 -Source nugetRepository -Force -Confirm:$false
+npm ci --prefix packages/ui
+npm run build --prefix packages/ui
 cmake --preset windows-x64
 cmake --build --preset windows-debug
+cmake --build build/windows-x64 --config Debug --target hyperreal_engine_smoke
+cmake --build build/windows-x64 --config Debug --target hyperreal_processor_state_smoke
+ctest --test-dir build/windows-x64 -C Debug --output-on-failure
 ```
 
-The VST3 and standalone artefacts appear under `build/windows-x64/HYPERREAL_artefacts/Debug`. The build does not copy the VST3 into the system plugin directory. Run the standalone target for a quick shell smoke check. For Cubase, copy the built VST3 bundle to the common VST3 directory only when ready for host testing, then rescan plugins.
+The compiled VST3 and standalone app appear under `build/windows-x64/HYPERREAL_artefacts/Debug`. The build does not copy the VST3 into the system plugin directory. JUCE is fetched at a pinned commit during initial development configure. The React bundle is embedded in the binaries and uses no server or CDN at runtime.
 
-The bundled Visual Studio CMake 3.21 on the initial workstation is too old for JUCE 9.0.5. A user-local CMake 3.31.10 was installed for development.
+## Current slice
 
-## Project structure
+- Load a local WAV, AIFF, or FLAC file using the native file chooser. Decode happens on a worker thread. Imports are limited to two channels, 60 seconds, and 128 MB in this prototype.
+- MIDI note 36 plays the sample as a one-shot from its scheduled sample offset. The UI AUDITION control uses the same engine.
+- Master gain is a host parameter with a versioned bridge command and automation gesture. Other pad parameters are reserved but do not affect audio yet.
+- DAW project state embeds the decoded sample and restores the sound without the source path. Phase 1 parameter-only state remains readable.
+- The interface is bundled locally and remains separate from audio processing.
 
-- `apps/plugin`: JUCE host-facing shell.
-- `packages/engine`: native DSP and pad contract.
-- `packages/ui`, `packages/visuals`, `packages/bridge`: local interface and bridge.
-- `packages/kits`: portable kit model and schema.
-- `assets`: locally packaged fonts, art, and factory content.
-- `tests`: DSP, state, interface, performance, and host integration checks.
-- `packaging`: Windows and macOS distribution work.
-- `docs`: contracts, requirements, architecture, and build decisions.
-- `changelogs`: timestamped Markdown change records.
-
-No factory sample content or third-party assets have been added.
+See [Phase 2 slice](docs/phase2-slice.md) for test evidence and remaining work. The complete 16-pad voice engine, kit persistence, routing, and final retro visuals are later phases.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "../../packages/engine/SampleEngine.h"
 
 class HyperrealAudioProcessor final : public juce::AudioProcessor
 {
@@ -26,10 +27,17 @@ public:
     void getStateInformation (juce::MemoryBlock& destination) override;
     void setStateInformation (const void* data, int size) override;
 
+    void requestSampleLoad (juce::File file) { engine.requestLoad (std::move (file)); }
+    void requestAudition() noexcept { engine.requestAudition(); }
+    juce::var getSnapshot() const;
+    bool setMasterGain (const juce::var& command);
+
 private:
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     juce::AudioProcessorValueTreeState parameters;
+    SampleEngine engine;
+    juce::SmoothedValue<float> smoothedMasterGain;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HyperrealAudioProcessor)
 };

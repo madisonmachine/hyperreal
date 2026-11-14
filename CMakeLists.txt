@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(HYPERREAL VERSION 0.1.0 LANGUAGES C CXX)
+project(HYPERREAL VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,6 +14,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(JUCE)
 
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packages/ui/dist/assets/app.js")
+    message(FATAL_ERROR "Build the local UI first: npm ci && npm run build in packages/ui")
+endif()
+
+juce_add_binary_data(HYPERREAL_Assets SOURCES
+    packages/ui/dist/index.html
+    packages/ui/dist/assets/app.js
+    packages/ui/dist/assets/style.css
+)
 juce_add_plugin(HYPERREAL
     COMPANY_NAME "HYPERREAL"
     BUNDLE_ID "com.hyperreal.audio"
@@ -33,17 +42,40 @@ juce_add_plugin(HYPERREAL
 target_sources(HYPERREAL PRIVATE
     apps/plugin/PluginProcessor.cpp
     apps/plugin/PluginProcessor.h
+    apps/plugin/PluginEditor.cpp
+    apps/plugin/PluginEditor.h
+    packages/engine/SampleEngine.cpp
+    packages/engine/SampleEngine.h
 )
 
 target_compile_definitions(HYPERREAL PUBLIC
     JUCE_WEB_BROWSER=1
     JUCE_USE_WIN_WEBVIEW2=1
+    JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
 target_link_libraries(HYPERREAL PRIVATE
+    HYPERREAL_Assets
     juce::juce_audio_utils
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )
+
+enable_testing()
+add_executable(hyperreal_engine_smoke
+    tests/dsp/SampleEngineSmoke.cpp
+    packages/engine/SampleEngine.cpp
+)
+target_compile_definitions(hyperreal_engine_smoke PRIVATE JUCE_USE_CURL=0)
+target_link_libraries(hyperreal_engine_smoke PRIVATE
+    juce::juce_audio_formats
+    juce::juce_recommended_config_flags
+)
+add_test(NAME hyperreal_engine_smoke COMMAND hyperreal_engine_smoke)
+add_executable(hyperreal_processor_state_smoke
+    tests/state/ProcessorStateSmoke.cpp
+)
+target_link_libraries(hyperreal_processor_state_smoke PRIVATE HYPERREAL juce::juce_audio_utils juce::juce_gui_extra juce::juce_webview2)
+add_test(NAME hyperreal_processor_state_smoke COMMAND hyperreal_processor_state_smoke)
