@@ -685,6 +685,74 @@ int main()
         std::cerr << "Unsupported source rate replaced an active sample\n";
         return 58;
     }
+    const auto fastSource = folder.getChildFile ("hyperreal-phase4-rate-96k.wav");
+    writeRampWav (fastSource, 96000);
+    SampleEngine rateEngine;
+    rateEngine.requestLoad (0, fastSource);
+    if (! waitForReady (rateEngine, 0))
+        return 59;
+    juce::AudioBuffer<float> edgeAudio (2, 128);
+    juce::MidiBuffer edgeMidi;
+    edgeMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                       static_cast<juce::uint8> (127)), 0);
+    SampleEngine::PlaybackSettings extremeTune {};
+    for (const double hostRate : { 44100.0, 48000.0, 96000.0 })
+        for (const int coarse : { -24, 24 })
+            for (const float fine : { -100.0f, 100.0f })
+                for (const bool reverse : { false, true })
+                {
+                    rateEngine.prepare (hostRate);
+                    extremeTune[0].coarseSemitones = coarse;
+                    extremeTune[0].fineCents = fine;
+                    if (! rateEngine.setPadEdit (0, { 10, 20, 0, 0, reverse }))
+                        return 60;
+                    rateEngine.process (edgeAudio, edgeMidi, extremeTune);
+                    const auto ratio = std::pow (2.0, (coarse + fine / 100.0) / 12.0);
+                    const auto expectedFrames = static_cast<int> (std::ceil (
+                        10.0 / (96000.0 / hostRate * ratio)));
+                    const auto firstValue = (reverse ? 2000.0f : 1100.0f) / 32768.0f;
+                    if (expectedFrames < 1 || expectedFrames >= edgeAudio.getNumSamples()
+                        || std::abs (edgeAudio.getSample (0, 0) - firstValue) > 0.002f
+                        || edgeAudio.getSample (0, expectedFrames - 1) <= 0.0f)
+                    {
+                        std::cerr << "Extreme tuning start or duration failed\n";
+                        return 61;
+                    }
+                    for (int frame = expectedFrames; frame < edgeAudio.getNumSamples(); ++frame)
+                        if (! std::isfinite (edgeAudio.getSample (0, frame))
+                            || std::abs (edgeAudio.getSample (0, frame)) > 1.0e-6f)
+                        {
+                            std::cerr << "Extreme tuning escaped selected region\n";
+                            return 62;
+                        }
+                }
+    rateEngine.prepare (44100.0);
+    if (! rateEngine.setPadEdit (0, { 10, 11, 0, 0, true }))
+        return 63;
+    extremeTune[0] = {};
+    rateEngine.process (edgeAudio, edgeMidi, extremeTune);
+    if (std::abs (edgeAudio.getSample (0, 0) - 1100.0f / 32768.0f) > 0.002f
+        || ! near (edgeAudio.getSample (0, 1), 0.0f))
+    {
+        std::cerr << "One-frame reverse region failed\n";
+        return 64;
+    }
+    if (! rateEngine.setPadEdit (0, { 10, 11, 100, 100, false })
+        || static_cast<int> (rateEngine.getSnapshot().getProperty ("fadeInFrames", -1)) != 1
+        || static_cast<int> (rateEngine.getSnapshot().getProperty ("fadeOutFrames", -1)) != 1)
+    {
+        std::cerr << "Overlong fades were not clamped to a short region\n";
+        return 65;
+    }
+    rateEngine.prepare (44100.0);
+    rateEngine.process (edgeAudio, edgeMidi, extremeTune);
+    if (std::abs (edgeAudio.getSample (0, 0)) > 1.0e-6f
+        || std::abs (edgeAudio.getSample (0, 1)) > 1.0e-6f)
+    {
+        std::cerr << "One-frame fades did not end at silence\n";
+        return 66;
+    }
+    fastSource.deleteFile();
     ramp.deleteFile();
 
     std::cout << "SampleEngine multi-pad smoke passed\n";

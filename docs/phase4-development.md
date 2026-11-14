@@ -12,12 +12,12 @@ Development started 14 November 2026 on `phase4-waveform-editing-tuning` from th
 
 ## Checked locally
 
-The Release UI and plugin build and both CTest suites pass. Pluginval strictness 5 reports SUCCESS. Engine tests cover forward trim, fades, reverse, invalid boundaries, cached waveform data, octave-up/down duration, 44.1-to-48 kHz conversion, edited state round-trip and rejection of a 500 kHz import without replacing the active sample. Processor tests cover host parameter validation, current state round-trip and older-state migration. The synthetic dense-trigger benchmark fixture now uses HRP7 edit records and runs again; 100,000 blocks of 128 frames with 16 triggers per block took 10.77 seconds on this PC, with about 0.108 ms average and 0.488 ms worst observed block. This is a closed-editor synthetic result, not a host guarantee. The current Phase 4 build has not yet been installed or checked in Cubase.
+The Release UI and plugin build and both CTest suites pass. Pluginval strictness 5 reports SUCCESS. Engine tests cover forward trim, fades, reverse, invalid boundaries, cached waveform data, octave-up/down duration, 44.1-to-48 kHz conversion, edited state round-trip and rejection of a 500 kHz import without replacing the active sample. They now also cover a 96 kHz source at 44.1, 48 and 96 kHz host rates, both tuning extremes with fine-cent offsets, reverse boundaries, one-frame playback and overlong fade clamping. Processor tests cover host parameter validation, current state round-trip and older-state migration. The synthetic dense-trigger benchmark fixture now uses HRP7 edit records and runs again; 100,000 blocks of 128 frames with 16 triggers per block took 10.77 seconds on this PC, with about 0.108 ms average and 0.488 ms worst observed block. This is a closed-editor synthetic result, not a host guarantee. The validated 0.4.0 build is installed in the per-user VST3 folder for Cubase; its binary hash matches the build. The prior installed bundle is backed up in the ignored `build/manual-test` folder.
 
 ## Still required for Phase 4 sign-off
 
 - Host checks in Cubase for waveform display, marker dragging, MIDI versus audition consistency, save/reopen and automation of tuning.
-- Wider sample-rate, short-region, extreme tuning and zoom checks; listen for aliasing at high transposition and decide whether the interpolation quality is sufficient.
+- Listen for aliasing at high transposition and decide whether the current interpolation quality is sufficient. Check extreme zoom in the host editor.
 - Check the editor at different sizes and while audio is playing, including playback cursor and UI responsiveness. Pitch analysis and scale quantization are optional and deferred.
 
 The disconnected clean-Windows installation and sustained host-use checks remain deferred from earlier phases, separately from Phase 4 acceptance.
