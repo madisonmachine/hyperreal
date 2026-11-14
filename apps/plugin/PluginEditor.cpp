@@ -65,6 +65,16 @@ HyperrealAudioProcessorEditor::HyperrealAudioProcessorEditor (HyperrealAudioProc
                    {
                        complete (processor.getSnapshot());
                    })
+                   .withNativeFunction ("getWaveform", [this] (const auto& arguments, auto complete)
+                   {
+                       const auto pad = arguments.size() == 1
+                                          ? padFromCommand (arguments[0], 6) : std::nullopt;
+                       const auto level = pad.has_value()
+                                          ? arguments[0].getProperty ("level", -1) : juce::var (-1);
+                       complete (pad.has_value() && level.isInt()
+                                 ? processor.getWaveform (*pad, static_cast<int> (level))
+                                 : juce::var {});
+                   })
                    .withNativeFunction ("chooseSample", [this] (const auto& arguments, auto complete)
                    {
                        const auto pad = arguments.size() == 1
@@ -116,6 +126,18 @@ HyperrealAudioProcessorEditor::HyperrealAudioProcessorEditor (HyperrealAudioProc
                    .withNativeFunction ("setVelocityCurve", [this] (const auto& arguments, auto complete)
                    {
                        complete (arguments.size() == 1 && processor.setPadVelocityCurve (arguments[0]));
+                   })
+                   .withNativeFunction ("setPadEdit", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && processor.setPadEdit (arguments[0]));
+                   })
+                   .withNativeFunction ("setCoarseTune", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && processor.setPadCoarseTune (arguments[0]));
+                   })
+                   .withNativeFunction ("setFineTune", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && processor.setPadFineTune (arguments[0]));
                    })
                    .withNativeFunction ("selectPad", [this] (const auto& arguments, auto complete)
                    {

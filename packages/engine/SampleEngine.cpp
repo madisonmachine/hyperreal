@@ -27,6 +27,7 @@ SampleEngine::SampleEngine()
         activeSamples[pad].store (nullptr);
         auditionCounters[pad].store (0);
         midiTriggerCounters[pad].store (0);
+        playbackFrames[pad].store (-1);
         status[pad] = "empty";
         message[pad] = "Load WAV, AIFF or FLAC to begin.";
     }
@@ -56,6 +57,7 @@ void SampleEngine::prepare (double hostSampleRate) noexcept
     {
         auditionSeen[pad] = auditionCounters[pad].load();
         audiblePads[pad] = true;
+        playbackFrames[pad].store (-1);
     }
     for (int voiceIndex = 0; voiceIndex < maxVoices; ++voiceIndex)
     {
@@ -118,11 +120,43 @@ std::unique_ptr<SampleEngine::Sample> SampleEngine::cloneSample (const Sample* s
 {
     if (source == nullptr)
         return nullptr;
-    auto copy = std::make_unique<Sample>();
-    copy->audio.makeCopyOf (source->audio);
-    copy->sampleRate = source->sampleRate;
-    copy->name = source->name;
-    return copy;
+    return std::make_unique<Sample> (*source);
+}
+
+SampleEngine::Edit SampleEngine::defaultEdit (int frames, double sampleRate) noexcept
+{
+    return { 0, frames, 0,
+             std::min (frames - 1, std::max (1, static_cast<int> (sampleRate * 0.005))), false };
+}
+
+void SampleEngine::buildWaveform (SampleData& data)
+{
+    constexpr std::array<int, 4> sizes { 128, 512, 2048, 8192 };
+    const auto frames = data.audio.getNumSamples();
+    for (int level = 0; level < static_cast<int> (sizes.size()); ++level)
+    {
+        auto& wave = data.waveform[level];
+        wave.minimum.resize (sizes[level]);
+        wave.maximum.resize (sizes[level]);
+        for (int bucket = 0; bucket < sizes[level]; ++bucket)
+        {
+            const auto first = static_cast<int> (static_cast<juce::int64> (bucket) * frames
+                                                  / sizes[level]);
+            const auto last = std::max (first + 1, static_cast<int> (
+                static_cast<juce::int64> (bucket + 1) * frames / sizes[level]));
+            auto minimum = std::numeric_limits<float>::max();
+            auto maximum = std::numeric_limits<float>::lowest();
+            for (int channel = 0; channel < data.audio.getNumChannels(); ++channel)
+                for (int frame = first; frame < last; ++frame)
+                {
+                    const auto value = data.audio.getSample (channel, frame);
+                    minimum = std::min (minimum, value);
+                    maximum = std::max (maximum, value);
+                }
+            wave.minimum[bucket] = minimum;
+            wave.maximum[bucket] = maximum;
+        }
+    }
 }
 
 bool SampleEngine::copyPad (int pad)
@@ -143,10 +177,10 @@ bool SampleEngine::pastePad (int pad)
     std::lock_guard lock (controlMutex);
     if (! clipboardReady)
         return false;
-    auto bytes = clipboard != nullptr ? sampleBytes (clipboard->audio) : 0;
+    auto bytes = clipboard != nullptr ? sampleBytes (clipboard->data->audio) : 0;
     for (int other = 0; other < padCount; ++other)
         if (other != pad && current[other] != nullptr)
-            bytes += sampleBytes (current[other]->audio);
+            bytes += sampleBytes (current[other]->data->audio);
     if (bytes > maxKitBytes)
     {
         message[pad] = "Paste exceeds the 512 MB kit sample limit.";
@@ -176,6 +210,8 @@ bool SampleEngine::swapPads (int first, int second)
     std::swap (current[first], current[second]);
     activeSamples[first].store (current[first].get());
     activeSamples[second].store (current[second].get());
+    ++sampleRevisions[first];
+    ++sampleRevisions[second];
     status[first] = current[first] != nullptr ? "ready" : "empty";
     status[second] = current[second] != nullptr ? "ready" : "empty";
     message[first] = message[second] = "Pad content swapped; MIDI notes stay with grid slots.";
@@ -193,6 +229,29 @@ bool SampleEngine::clearPad (int pad)
     publishSample (pad, nullptr);
     status[pad] = "empty";
     message[pad] = "Pad cleared. Existing voices may finish playing.";
+    reapRetired();
+    return true;
+}
+
+bool SampleEngine::setPadEdit (int pad, Edit edit)
+{
+    if (pad < 0 || pad >= padCount)
+        return false;
+    std::lock_guard lock (controlMutex);
+    if (current[pad] == nullptr)
+        return false;
+    const auto frames = current[pad]->data->audio.getNumSamples();
+    edit.startFrame = std::clamp (edit.startFrame, 0, frames - 1);
+    edit.endFrame = std::clamp (edit.endFrame, 1, frames);
+    if (edit.startFrame >= edit.endFrame)
+        return false;
+    const auto length = edit.endFrame - edit.startFrame;
+    edit.fadeInFrames = std::clamp (edit.fadeInFrames, 0, length);
+    edit.fadeOutFrames = std::clamp (edit.fadeOutFrames, 0, length);
+    auto edited = cloneSample (current[pad].get());
+    edited->edit = edit;
+    publishSample (pad, std::move (edited));
+    message[pad] = "Non-destructive playback edit applied.";
     reapRetired();
     return true;
 }
@@ -320,39 +379,53 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
     auto* left = output.getWritePointer (0);
     auto* right = output.getWritePointer (1);
     const auto* source = playing.sample;
-    const auto frames = source->audio.getNumSamples();
-    const auto* sourceLeft = source->audio.getReadPointer (0);
-    const auto* sourceRight = source->audio.getReadPointer (
-        source->audio.getNumChannels() > 1 ? 1 : 0);
-    const auto step = source->sampleRate / hostRate;
+    const auto& audio = source->data->audio;
+    const auto& edit = source->edit;
+    const auto regionFrames = edit.endFrame - edit.startFrame;
+    const auto* sourceLeft = audio.getReadPointer (0);
+    const auto* sourceRight = audio.getReadPointer (audio.getNumChannels() > 1 ? 1 : 0);
+    const auto semitones = std::clamp (settings[playing.pad].coarseSemitones, -24, 24)
+                           + std::clamp (settings[playing.pad].fineCents, -100.0f, 100.0f) / 100.0;
+    const auto pitchRatio = semitones == 0.0 ? 1.0 : std::pow (2.0, semitones / 12.0);
+    const auto targetStep = source->data->sampleRate / hostRate * pitchRatio;
+    if (playing.step <= 0.0)
+        playing.step = targetStep;
+    const auto stepSmoothing = std::min (1.0, 1.0 / (hostRate * 0.01));
     const auto level = std::clamp (settings[playing.pad].level, 0.0f, 1.0f);
-    // Phase 3 one-shot schedule: hold at full level, then fade through the
-    // final 5 ms of source audio. Gate and choke releases can begin earlier.
-    const auto endFadeFrames = std::max (1.0, std::min (source->sampleRate * 0.005,
-                                                       static_cast<double> (frames - 1)));
-    const auto endFadeStart = static_cast<double> (frames - 1) - endFadeFrames;
-    const auto endFadeInverse = 1.0 / endFadeFrames;
+    const auto fadeInInverse = edit.fadeInFrames > 0 ? 1.0 / edit.fadeInFrames : 0.0;
+    const auto fadeOutStart = regionFrames - 1 - edit.fadeOutFrames;
+    const auto fadeOutInverse = edit.fadeOutFrames > 0 ? 1.0 / edit.fadeOutFrames : 0.0;
     for (int frame = begin; frame < end; ++frame)
     {
-        const auto index = static_cast<int> (playing.position);
-        if (index >= frames)
+        if (playing.position >= regionFrames)
         {
             playing.sample = nullptr;
             pointer.store (nullptr);
             break;
         }
-        const auto next = std::min (index + 1, frames - 1);
-        const auto fraction = static_cast<float> (playing.position - index);
+        const auto sourcePosition = edit.reversed
+            ? static_cast<double> (edit.endFrame - 1) - playing.position
+            : static_cast<double> (edit.startFrame) + playing.position;
+        const auto index = std::clamp (static_cast<int> (sourcePosition),
+                                       edit.startFrame, edit.endFrame - 1);
+        const auto next = std::min (index + 1, edit.endFrame - 1);
+        const auto fraction = static_cast<float> (std::max (0.0, sourcePosition - index));
         const auto releaseGain = playing.releaseRemaining > 0
             ? static_cast<float> (playing.releaseRemaining) / playing.releaseTotal : 1.0f;
-        const auto endGain = playing.position < endFadeStart ? 1.0f
+        const auto inGain = edit.fadeInFrames == 0 ? 1.0f
+            : static_cast<float> (std::min (1.0, playing.position * fadeInInverse));
+        const auto outGain = edit.fadeOutFrames == 0 || playing.position < fadeOutStart ? 1.0f
             : static_cast<float> (std::max (0.0,
-                (static_cast<double> (frames - 1) - playing.position) * endFadeInverse));
+                (static_cast<double> (regionFrames - 1) - playing.position) * fadeOutInverse));
         left[frame] += (sourceLeft[index] + (sourceLeft[next] - sourceLeft[index]) * fraction)
-                       * playing.gain * level * releaseGain * endGain;
+                       * playing.gain * level * releaseGain * inGain * outGain;
         right[frame] += (sourceRight[index] + (sourceRight[next] - sourceRight[index]) * fraction)
-                        * playing.gain * level * releaseGain * endGain;
-        playing.position += step;
+                        * playing.gain * level * releaseGain * inGain * outGain;
+        if (std::abs (playing.step - targetStep) > 1.0e-7)
+            playing.step += (targetStep - playing.step) * stepSmoothing;
+        else
+            playing.step = targetStep;
+        playing.position += playing.step;
         if (playing.releaseRemaining > 0 && --playing.releaseRemaining == 0)
         {
             playing.sample = nullptr;
@@ -441,6 +514,23 @@ void SampleEngine::process (juce::AudioBuffer<float>& output, const juce::MidiBu
     }
 
     renderRange (output, cursor, output.getNumSamples(), settings);
+    std::array<const Voice*, padCount> latestVoices {};
+    for (const auto& voice : voices)
+        if (voice.sample != nullptr)
+        {
+            auto& latest = latestVoices[voice.pad];
+            if (latest == nullptr || voice.sequence > latest->sequence)
+                latest = &voice;
+        }
+    for (int pad = 0; pad < padCount; ++pad)
+    {
+        const auto* latest = latestVoices[pad];
+        const auto frame = latest == nullptr ? -1
+            : static_cast<int> (latest->sample->edit.reversed
+                ? latest->sample->edit.endFrame - 1 - latest->position
+                : latest->sample->edit.startFrame + latest->position);
+        playbackFrames[pad].store (frame, std::memory_order_relaxed);
+    }
     callbackActive.store (false);
 }
 
@@ -457,9 +547,21 @@ juce::var SampleEngine::getSnapshot (int selectedPad) const
     object->setProperty ("sampleName", current[selectedPad] != nullptr
                                            ? current[selectedPad]->name : juce::String());
     object->setProperty ("sampleRate", current[selectedPad] != nullptr
-                                           ? current[selectedPad]->sampleRate : 0.0);
+                                           ? current[selectedPad]->data->sampleRate : 0.0);
     object->setProperty ("durationSeconds", current[selectedPad] != nullptr
-        ? current[selectedPad]->audio.getNumSamples() / current[selectedPad]->sampleRate : 0.0);
+        ? current[selectedPad]->data->audio.getNumSamples() / current[selectedPad]->data->sampleRate : 0.0);
+    object->setProperty ("sourceFrames", current[selectedPad] != nullptr
+        ? current[selectedPad]->data->audio.getNumSamples() : 0);
+    object->setProperty ("sampleRevision", static_cast<juce::int64> (
+        sampleRevisions[selectedPad]));
+    const auto edit = current[selectedPad] != nullptr ? current[selectedPad]->edit : Edit {};
+    object->setProperty ("trimStart", edit.startFrame);
+    object->setProperty ("trimEnd", edit.endFrame);
+    object->setProperty ("fadeInFrames", edit.fadeInFrames);
+    object->setProperty ("fadeOutFrames", edit.fadeOutFrames);
+    object->setProperty ("reverse", edit.reversed);
+    object->setProperty ("playbackFrame", playbackFrames[selectedPad].load (
+        std::memory_order_relaxed));
     juce::Array<juce::var> pads;
     for (int pad = 0; pad < padCount; ++pad)
     {
@@ -476,13 +578,42 @@ juce::var SampleEngine::getSnapshot (int selectedPad) const
     return juce::var (object);
 }
 
+juce::var SampleEngine::getWaveform (int pad, int level) const
+{
+    if (pad < 0 || pad >= padCount || level < 0 || level >= 4)
+        return {};
+    std::lock_guard lock (controlMutex);
+    if (current[pad] == nullptr)
+        return {};
+    const auto& wave = current[pad]->data->waveform[level];
+    juce::Array<juce::var> minimum, maximum;
+    minimum.ensureStorageAllocated (static_cast<int> (wave.minimum.size()));
+    maximum.ensureStorageAllocated (static_cast<int> (wave.maximum.size()));
+    for (const auto value : wave.minimum)
+        minimum.add (value);
+    for (const auto value : wave.maximum)
+        maximum.add (value);
+    auto* result = new juce::DynamicObject();
+    result->setProperty ("schemaVersion", 6);
+    result->setProperty ("pad", pad);
+    result->setProperty ("level", level);
+    result->setProperty ("sampleRevision", static_cast<juce::int64> (sampleRevisions[pad]));
+    result->setProperty ("minimum", juce::var (minimum));
+    result->setProperty ("maximum", juce::var (maximum));
+    return juce::var (result);
+}
+
 void SampleEngine::publishSample (int pad, std::unique_ptr<Sample> next)
 {
     // controlMutex is held. Audio reads immutable samples through atomics.
+    const auto contentChanged = current[pad] == nullptr || next == nullptr
+                                || current[pad]->data != next->data;
     activeSamples[pad].store (next.get());
     if (current[pad] != nullptr)
         retired.push_back (std::move (current[pad]));
     current[pad] = std::move (next);
+    if (contentChanged)
+        ++sampleRevisions[pad];
 }
 
 void SampleEngine::reapRetired()
@@ -581,14 +712,19 @@ void SampleEngine::workerLoop()
             {
                 decoded = std::make_unique<Sample>();
                 const auto frames = static_cast<int> (reader->lengthInSamples);
-                decoded->audio.setSize (static_cast<int> (reader->numChannels), frames);
-                decoded->sampleRate = reader->sampleRate;
+                auto data = std::make_shared<SampleData>();
+                data->audio.setSize (static_cast<int> (reader->numChannels), frames);
+                data->sampleRate = reader->sampleRate;
+                decoded->data = data;
                 decoded->name = sourceName;
-                if (! reader->read (&decoded->audio, 0, frames, 0, true, true))
+                decoded->edit = defaultEdit (frames, reader->sampleRate);
+                if (! reader->read (&data->audio, 0, frames, 0, true, true))
                 {
                     decoded.reset();
                     error = "Could not decode the selected sample.";
                 }
+                else
+                    buildWaveform (*data);
             }
         }
         else
@@ -605,10 +741,10 @@ void SampleEngine::workerLoop()
             }
             if (decoded != nullptr)
             {
-                auto bytes = sampleBytes (decoded->audio);
+                auto bytes = sampleBytes (decoded->data->audio);
                 for (int other = 0; other < padCount; ++other)
                     if (other != pad && current[other] != nullptr)
-                        bytes += sampleBytes (current[other]->audio);
+                        bytes += sampleBytes (current[other]->data->audio);
                 if (bytes > maxKitBytes)
                 {
                     decoded.reset();
@@ -632,29 +768,37 @@ void SampleEngine::workerLoop()
     }
 }
 
-void SampleEngine::writeSample (juce::OutputStream& output, const Sample* sample)
+void SampleEngine::writeSample (juce::OutputStream& output, const Sample* sample, bool includeEdits)
 {
     output.writeByte (sample != nullptr ? 1 : 0);
     if (sample == nullptr)
         return;
     output.writeString (sample->name);
-    output.writeDouble (sample->sampleRate);
-    output.writeInt (sample->audio.getNumChannels());
-    output.writeInt (sample->audio.getNumSamples());
-    for (int channel = 0; channel < sample->audio.getNumChannels(); ++channel)
-        for (int frame = 0; frame < sample->audio.getNumSamples(); ++frame)
-            output.writeFloat (sample->audio.getSample (channel, frame));
+    output.writeDouble (sample->data->sampleRate);
+    output.writeInt (sample->data->audio.getNumChannels());
+    output.writeInt (sample->data->audio.getNumSamples());
+    for (int channel = 0; channel < sample->data->audio.getNumChannels(); ++channel)
+        for (int frame = 0; frame < sample->data->audio.getNumSamples(); ++frame)
+            output.writeFloat (sample->data->audio.getSample (channel, frame));
+    if (includeEdits)
+    {
+        output.writeInt (sample->edit.startFrame);
+        output.writeInt (sample->edit.endFrame);
+        output.writeInt (sample->edit.fadeInFrames);
+        output.writeInt (sample->edit.fadeOutFrames);
+        output.writeByte (sample->edit.reversed ? 1 : 0);
+    }
 }
 
-void SampleEngine::writeSampleState (juce::OutputStream& output) const
+void SampleEngine::writeSampleState (juce::OutputStream& output, bool includeEdits) const
 {
     std::lock_guard lock (controlMutex);
     for (const auto& sample : current)
-        writeSample (output, sample.get());
+        writeSample (output, sample.get(), includeEdits);
 }
 
 bool SampleEngine::readSample (juce::InputStream& input, std::unique_ptr<Sample>& sample,
-                               juce::int64& decodedBytes)
+                               juce::int64& decodedBytes, bool hasEdits)
 {
     if (input.getNumBytesRemaining() < 1)
         return false;
@@ -670,41 +814,66 @@ bool SampleEngine::readSample (juce::InputStream& input, std::unique_ptr<Sample>
 
     auto restored = std::make_unique<Sample>();
     restored->name = input.readString();
-    restored->sampleRate = input.readDouble();
+    const auto sampleRate = input.readDouble();
     const auto channels = input.readInt();
     const auto frames = input.readInt();
     const auto bytes = static_cast<juce::int64> (channels) * frames * 4;
     if (restored->name.length() > 255
         || channels < 1 || channels > maxChannels || frames < 1
-        || ! std::isfinite (restored->sampleRate)
-        || restored->sampleRate <= 0.0 || restored->sampleRate > 384000.0
-        || frames > maxDurationSeconds * restored->sampleRate
+        || ! std::isfinite (sampleRate)
+        || sampleRate <= 0.0 || sampleRate > 384000.0
+        || frames > maxDurationSeconds * sampleRate
         || bytes > maxDecodedSampleBytes
         || input.getNumBytesRemaining() < bytes)
         return false;
 
-    restored->audio.setSize (channels, frames);
+    auto data = std::make_shared<SampleData>();
+    data->audio.setSize (channels, frames);
+    data->sampleRate = sampleRate;
     for (int channel = 0; channel < channels; ++channel)
         for (int frame = 0; frame < frames; ++frame)
         {
             const auto value = input.readFloat();
             if (! std::isfinite (value) || std::abs (value) > 100.0f)
                 return false;
-            restored->audio.setSample (channel, frame, value);
+            data->audio.setSample (channel, frame, value);
         }
+    restored->data = data;
+    buildWaveform (*data);
+    restored->edit = defaultEdit (frames, sampleRate);
+    if (hasEdits)
+    {
+        if (input.getNumBytesRemaining() < 17)
+            return false;
+        Edit edit;
+        edit.startFrame = input.readInt();
+        edit.endFrame = input.readInt();
+        edit.fadeInFrames = input.readInt();
+        edit.fadeOutFrames = input.readInt();
+        const auto reverse = input.readByte();
+        if (edit.startFrame < 0 || edit.endFrame > frames
+            || edit.startFrame >= edit.endFrame
+            || edit.fadeInFrames < 0 || edit.fadeOutFrames < 0
+            || edit.fadeInFrames > edit.endFrame - edit.startFrame
+            || edit.fadeOutFrames > edit.endFrame - edit.startFrame
+            || (reverse != 0 && reverse != 1))
+            return false;
+        edit.reversed = reverse == 1;
+        restored->edit = edit;
+    }
     sample = std::move (restored);
     decodedBytes = bytes;
     return true;
 }
 
-bool SampleEngine::restoreSampleState (juce::InputStream& input)
+bool SampleEngine::restoreSampleState (juce::InputStream& input, bool hasEdits)
 {
     std::array<std::unique_ptr<Sample>, padCount> restored;
     juce::int64 totalBytes = 0;
     for (auto& sample : restored)
     {
         juce::int64 bytes = 0;
-        if (! readSample (input, sample, bytes))
+        if (! readSample (input, sample, bytes, hasEdits))
             return false;
         totalBytes += bytes;
         if (totalBytes > maxKitBytes)
@@ -729,7 +898,7 @@ bool SampleEngine::restorePhase2SampleState (juce::InputStream& input)
 {
     std::unique_ptr<Sample> restored;
     juce::int64 bytes = 0;
-    if (! readSample (input, restored, bytes) || input.getNumBytesRemaining() != 0)
+    if (! readSample (input, restored, bytes, false) || input.getNumBytesRemaining() != 0)
         return false;
     std::lock_guard lock (controlMutex);
     publishSample (0, std::move (restored));

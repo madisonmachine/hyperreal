@@ -38,6 +38,25 @@ void writeWav (const juce::File& file, int value)
     for (int frame = 0; frame < frames; ++frame)
         write16 (wav, static_cast<unsigned int> (value));
 }
+void writeRampWav (const juce::File& file)
+{
+    constexpr int frames = 256;
+    std::ofstream wav (file.getFullPathName().toStdString(), std::ios::binary);
+    wav.write ("RIFF", 4);
+    write32 (wav, 36 + frames * 2);
+    wav.write ("WAVEfmt ", 8);
+    write32 (wav, 16);
+    write16 (wav, 1);
+    write16 (wav, 1);
+    write32 (wav, 44100);
+    write32 (wav, 88200);
+    write16 (wav, 2);
+    write16 (wav, 16);
+    wav.write ("data", 4);
+    write32 (wav, frames * 2);
+    for (int frame = 0; frame < frames; ++frame)
+        write16 (wav, static_cast<unsigned int> ((frame + 1) * 100));
+}
 bool waitForReady (SampleEngine& engine, int pad)
 {
     for (int attempt = 0; attempt < 300; ++attempt)
@@ -556,6 +575,96 @@ int main()
         std::cerr << "Tail-pool overflow did not release the old voice\n";
         return 46;
     }
+
+    const auto ramp = folder.getChildFile ("hyperreal-phase4-ramp.wav");
+    writeRampWav (ramp);
+    SampleEngine edited;
+    edited.prepare (44100.0);
+    edited.requestLoad (0, ramp);
+    if (! waitForReady (edited, 0)
+        || ! edited.setPadEdit (0, { 10, 20, 2, 2, false })
+        || edited.setPadEdit (0, { 20, 10, 0, 0, false }))
+        return 47;
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    edited.process (audio, midi);
+    if (! near (audio.getSample (0, 0), 0.0f)
+        || std::abs (audio.getSample (0, 1) - 1200.0f / 32768.0f * 0.5f) > 0.002f
+        || std::abs (audio.getSample (0, 8) - 1900.0f / 32768.0f * 0.5f) > 0.002f
+        || ! near (audio.getSample (0, 9), 0.0f)
+        || ! near (audio.getSample (0, 10), 0.0f))
+    {
+        std::cerr << "Trimmed playback fades or boundary failed\n";
+        return 48;
+    }
+    if (! edited.setPadEdit (0, { 10, 20, 0, 0, true }))
+        return 49;
+    edited.prepare (44100.0);
+    edited.process (audio, midi);
+    if (std::abs (audio.getSample (0, 0) - 2000.0f / 32768.0f) > 0.002f
+        || std::abs (audio.getSample (0, 9) - 1100.0f / 32768.0f) > 0.002f
+        || ! near (audio.getSample (0, 10), 0.0f))
+    {
+        std::cerr << "Reverse playback escaped selected region\n";
+        return 50;
+    }
+    const auto waveform = edited.getWaveform (0, 0);
+    if (! waveform.isObject()
+        || waveform.getProperty ("minimum", {}).getArray() == nullptr
+        || waveform.getProperty ("maximum", {}).getArray() == nullptr
+        || waveform.getProperty ("minimum", {}).getArray()->size() != 128)
+    {
+        std::cerr << "Waveform summary was not generated\n";
+        return 52;
+    }
+    if (! edited.setPadEdit (0, { 10, 20, 0, 0, false }))
+        return 53;
+    SampleEngine::PlaybackSettings tuning {};
+    tuning[0].coarseSemitones = 12;
+    edited.prepare (44100.0);
+    edited.process (audio, midi, tuning);
+    if (std::abs (audio.getSample (0, 1) - 1300.0f / 32768.0f) > 0.002f
+        || ! near (audio.getSample (0, 5), 0.0f))
+    {
+        std::cerr << "Octave-up resampling or duration failed\n";
+        return 54;
+    }
+    tuning[0].coarseSemitones = -12;
+    edited.prepare (44100.0);
+    edited.process (audio, midi, tuning);
+    if (std::abs (audio.getSample (0, 2) - 1200.0f / 32768.0f) > 0.002f
+        || ! near (audio.getSample (0, 20), 0.0f))
+    {
+        std::cerr << "Octave-down resampling or duration failed\n";
+        return 55;
+    }
+    tuning[0].coarseSemitones = 0;
+    edited.prepare (48000.0);
+    edited.process (audio, midi, tuning);
+    if (std::abs (audio.getSample (0, 1) - 1191.875f / 32768.0f) > 0.002f)
+    {
+        std::cerr << "Sample-rate resampling failed\n";
+        return 56;
+    }
+    if (! edited.setPadEdit (0, { 10, 20, 0, 0, true }))
+        return 57;
+    juce::MemoryBlock editedState;
+    {
+        juce::MemoryOutputStream output (editedState, false);
+        edited.writeSampleState (output);
+    }
+    juce::MemoryInputStream editedInput (editedState.getData(), editedState.getSize(), false);
+    SampleEngine recalledEdit;
+    recalledEdit.prepare (44100.0);
+    if (! recalledEdit.restoreSampleState (editedInput)
+        || static_cast<int> (recalledEdit.getSnapshot().getProperty ("trimStart", -1)) != 10
+        || static_cast<int> (recalledEdit.getSnapshot().getProperty ("trimEnd", -1)) != 20
+        || ! static_cast<bool> (recalledEdit.getSnapshot().getProperty ("reverse", false)))
+    {
+        std::cerr << "Phase 4 edit state did not round-trip\n";
+        return 51;
+    }
+    ramp.deleteFile();
 
     std::cout << "SampleEngine multi-pad smoke passed\n";
     return 0;

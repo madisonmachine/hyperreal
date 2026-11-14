@@ -10,6 +10,14 @@ export type Snapshot = {
   message: string
   durationSeconds: number
   sampleRate: number
+  sourceFrames: number
+  sampleRevision: number
+  trimStart: number
+  trimEnd: number
+  fadeInFrames: number
+  fadeOutFrames: number
+  reverse: boolean
+  playbackFrame: number
   masterGain: number
   padLevel: number
   padMode: number
@@ -19,20 +27,37 @@ export type Snapshot = {
   clipboardReady: boolean
   voiceLimit: number
   velocityCurve: number
+  coarseTune: number
+  fineTune: number
 }
+export type Waveform = { schemaVersion: number; pad: number; level: number; sampleRevision: number; minimum: number[]; maximum: number[] }
 const demo: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
   pads: Array.from({ length: 16 }, (_, index) => ({
     index, midiNote: index + 36, midiTriggerCount: 0, status: 'empty', sampleName: '', muted: false, solo: false
   })),
   sampleName: '', status: 'empty', message: 'Open the plugin to load a sample.',
-  durationSeconds: 0, sampleRate: 0, masterGain: 1,
+  durationSeconds: 0, sampleRate: 0, sourceFrames: 0, sampleRevision: 0,
+  trimStart: 0, trimEnd: 0, fadeInFrames: 0, fadeOutFrames: 0,
+  reverse: false, playbackFrame: -1, masterGain: 1,
   padLevel: 1, padMode: 0, chokeGroup: 0, muted: false, solo: false,
-  clipboardReady: false, voiceLimit: 4, velocityCurve: 1
+  clipboardReady: false, voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0
 }
 const nativeAvailable = () => Boolean((window as Window & { __JUCE__?: unknown }).__JUCE__)
 export async function readSnapshot(): Promise<Snapshot> {
   return nativeAvailable() ? await getNativeFunction('getSnapshot')() as Snapshot : demo
+}
+export async function readWaveform(pad: number, level: number): Promise<Waveform | null> {
+  return nativeAvailable() ? await getNativeFunction('getWaveform')({ schemaVersion: 6, pad, level }) as Waveform | null : null
+}
+export async function setPadEdit(pad: number, edit: { startFrame: number; endFrame: number; fadeInFrames: number; fadeOutFrames: number; reversed: boolean }): Promise<boolean> {
+  return nativeAvailable() ? Boolean(await getNativeFunction('setPadEdit')({ schemaVersion: 6, pad, ...edit })) : false
+}
+export async function setCoarseTune(pad: number, value: number): Promise<boolean> {
+  return nativeAvailable() ? Boolean(await getNativeFunction('setCoarseTune')({ schemaVersion: 3, pad, value })) : false
+}
+export async function setFineTune(pad: number, value: number): Promise<boolean> {
+  return nativeAvailable() ? Boolean(await getNativeFunction('setFineTune')({ schemaVersion: 6, pad, value })) : false
 }
 export async function chooseSample(pad: number): Promise<void> {
   if (nativeAvailable()) await getNativeFunction('chooseSample')({ schemaVersion: 2, pad })
