@@ -98,8 +98,20 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
     }
     if (!waveform || !frames) return
     const size = waveform.minimum.length
-    context.strokeStyle = '#a8d4aa'
+    const startX = toPixel(draft.startFrame, width)
+    const endX = toPixel(draft.endFrame, width)
+    context.fillStyle = '#090d0ab8'
+    context.fillRect(0, 0, Math.max(0, startX), height)
+    context.fillRect(Math.min(width, endX), 0, Math.max(0, width - endX), height)
+    const regionFrames = draft.endFrame - draft.startFrame
+    const strokePeak = (x: number, low: number, high: number) => {
+      context.beginPath()
+      context.moveTo(x + 0.5, height * (0.5 - Math.max(-1, Math.min(1, high)) * 0.42))
+      context.lineTo(x + 0.5, height * (0.5 - Math.max(-1, Math.min(1, low)) * 0.42))
+      context.stroke()
+    }
     for (let x = 0; x < width; ++x) {
+      const sourceFrame = visibleStart + (x + 0.5) / width * visibleFrames
       const first = Math.min(size - 1, Math.floor((visibleStart + x / width * visibleFrames) / frames * size))
       const last = Math.min(size, Math.max(first + 1,
         Math.ceil((visibleStart + (x + 1) / width * visibleFrames) / frames * size)))
@@ -108,16 +120,19 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
         low = Math.min(low, waveform.minimum[bucket])
         high = Math.max(high, waveform.maximum[bucket])
       }
-      context.beginPath()
-      context.moveTo(x + 0.5, height * (0.5 - Math.max(-1, Math.min(1, high)) * 0.42))
-      context.lineTo(x + 0.5, height * (0.5 - Math.max(-1, Math.min(1, low)) * 0.42))
-      context.stroke()
+      context.strokeStyle = '#49614c'
+      strokePeak(x, low, high)
+      if (sourceFrame < draft.startFrame || sourceFrame >= draft.endFrame) continue
+      const playbackPosition = draft.reversed
+        ? draft.endFrame - 1 - sourceFrame : sourceFrame - draft.startFrame
+      const fadeIn = draft.fadeInFrames > 0
+        ? Math.max(0, Math.min(1, playbackPosition / draft.fadeInFrames)) : 1
+      const fadeOut = draft.fadeOutFrames > 0
+        ? Math.max(0, Math.min(1, (regionFrames - 1 - playbackPosition) / draft.fadeOutFrames)) : 1
+      const editGain = fadeIn * fadeOut
+      context.strokeStyle = '#a8d4aa'
+      strokePeak(x, low * editGain, high * editGain)
     }
-    const startX = toPixel(draft.startFrame, width)
-    const endX = toPixel(draft.endFrame, width)
-    context.fillStyle = '#090d0ab8'
-    context.fillRect(0, 0, Math.max(0, startX), height)
-    context.fillRect(Math.min(width, endX), 0, Math.max(0, width - endX), height)
     const marker = (frame: number, color: string) => {
       const x = toPixel(frame, width)
       if (x < 0 || x > width) return
@@ -227,12 +242,17 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
     && draft.startFrame < draft.endFrame && draft.fadeInFrames >= 0 && draft.fadeOutFrames >= 0
     && draft.fadeInFrames <= draft.endFrame - draft.startFrame
     && draft.fadeOutFrames <= draft.endFrame - draft.startFrame
+  const tuneSemitones = coarse + fine / 100
+  const playbackSeconds = valid && Number.isFinite(tuneSemitones)
+    ? ((draft.endFrame - draft.startFrame) / rate / Math.pow(2, tuneSemitones / 12)).toFixed(4)
+    : '--'
   return <div className="wave-editor">
     <canvas ref={canvas} className="wave-canvas" aria-label="Sample waveform with trim and fade markers"
       onPointerDown={pointerDown}
       onPointerMove={event => { if (dragging.current) moveMarker(dragging.current, positionFromPointer(event)) }}
       onPointerUp={finishDrag} onPointerCancel={finishDrag} />
     <div className="wave-readout"><span>START {seconds(draft.startFrame)} S</span><span>END {seconds(draft.endFrame)} S</span><span>{frames} SOURCE FRAMES</span></div>
+    <div className="wave-readout"><span>PLAYBACK ~{playbackSeconds} S</span><span>RAW TRACE DIM / EDIT PREVIEW BRIGHT</span></div>
     <div className="wave-controls">
       <label>START <input type="number" min="0" max={frames - 1} value={draft.startFrame}
         onChange={event => setDraft(current => ({ ...current, startFrame: Number(event.target.value) }))} /></label>
