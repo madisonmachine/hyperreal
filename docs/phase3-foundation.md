@@ -24,7 +24,7 @@ Pad copy, paste, swap and clear now move the sample and all current per-pad sett
 
 The engine now uses a bounded 64-slot fade-tail pool when stealing a voice. Gated note-off matches MIDI channel and releases the oldest held note for that pad/channel. Per-pad voice limit is 1 to 4; one voice provides mono retrigger. Velocity curves are soft (square root), linear and hard (square). HRP6 saves the new controls and reads HRP5. Same-offset events follow MIDI buffer order, so the later note in a choke group wins. A playing-to-stopped host playhead transition requests a 5 ms release of active voices; the engine path is covered by a native test. A native file-drop target routes one supported audio file to the selected pad; Cubase/WebView routing is not yet manually verified.
 
-A headless Release benchmark loaded 16 pads and processed 100,000 blocks of 128 frames at 44.1 kHz with 16 triggers per block: 1.6 million triggers in 5.94 seconds, 0.059 ms average and 0.357 ms worst observed block. Private bytes stayed at 2,826,240 across this run. A further 5,000 copy/paste/swap/clear and snapshot cycles left private bytes at 2,826,240 after warmup. This is a synthetic closed-editor measurement on this PC, not a DAW timing guarantee or a long-session import/replacement test.
+A headless Release benchmark loaded 16 pads and processed 100,000 blocks of 128 frames at 44.1 kHz with 16 triggers per block: 1.6 million triggers in about 5.96 seconds, 0.060 ms average and 0.793 ms worst observed block in the latest run. Private bytes stayed at 2,813,952. A further 5,000 copy/paste/swap/clear and snapshot cycles and 1,000 worker sample replacements while processing also left private bytes at 2,813,952 after warmup. This is a synthetic closed-editor measurement on this PC, not a DAW timing guarantee or a long-session editor test.
 
 - The React/TypeScript UI production build passed.
 - The Release VST3 and standalone build passed.
@@ -34,10 +34,10 @@ A headless Release benchmark loaded 16 pads and processed 100,000 blocks of 128 
 
 ## Checks and features not yet completed
 
-- Manual Cubase Pro 15 validation of the 0.3.0 editor, loading multiple pads, MIDI 36 to 51, mode, choke, mute/solo and pad operations, cancellation, automation and saved-project recall. The installed 0.2.0 build remains the Cubase-verified version; 0.3.0 has not yet been installed or tested in Cubase.
+- Manual Cubase Pro 15 validation of the 0.3.0 editor, loading multiple pads, MIDI 36 to 51, mode, choke, mute/solo and pad operations, cancellation, automation and saved-project recall. The 0.3.0 Release VST3 is installed in the per-user VST3 folder and passed pluginval strictness 5 from that exact path. The previously Cubase-verified 0.2.0 bundle was backed up under the ignored build/manual-test folder. The 0.3.0 build has not yet been tested in Cubase.
 - Manual Cubase Pro 15 file-drop routing through the WebView to the selected pad; per-pad drop targeting is not yet implemented.
 - Cubase verification that a playing-to-stopped host playhead transition releases active voices; worst-case fade-tail saturation may still replace the oldest tail abruptly.
-- Long-session memory stress involving repeated file imports and the editor, plus sustained host performance measurement.
+- Long-session memory stress with the editor open, plus sustained host performance measurement.
 - The Phase 2 clean disconnected-Windows installation test remains open. The signed offline WebView2 installer and readiness check are prepared, but this PC has no clean Windows VM. This check remains a release gate.
 
 The callback performs no file I/O, JavaScript, routine allocation or blocking lock. Host state writing remains synchronous and can be large; snapshot cost under dense playback and large media requires later hardening.

@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <fstream>
+#include <thread>
 #if JUCE_WINDOWS
 #define NOMINMAX
 #include <windows.h>
@@ -20,6 +22,38 @@ size_t privateBytes()
         return static_cast<size_t> (counters.PrivateUsage);
 #endif
     return 0;
+}
+
+bool writeImportWav (const juce::File& file)
+{
+    std::ofstream output (file.getFullPathName().toStdString(), std::ios::binary);
+    if (! output)
+        return false;
+    auto write16 = [&output] (unsigned int value)
+    {
+        output.put (static_cast<char> (value & 0xff));
+        output.put (static_cast<char> ((value >> 8) & 0xff));
+    };
+    auto write32 = [&write16] (unsigned int value)
+    {
+        write16 (value & 0xffff);
+        write16 (value >> 16);
+    };
+    output.write ("RIFF", 4);
+    write32 (36 + 4410 * 2);
+    output.write ("WAVEfmt ", 8);
+    write32 (16);
+    write16 (1);
+    write16 (1);
+    write32 (44100);
+    write32 (88200);
+    write16 (2);
+    write16 (16);
+    output.write ("data", 4);
+    write32 (4410 * 2);
+    for (int frame = 0; frame < 4410; ++frame)
+        write16 (16384);
+    return output.good();
 }
 }
 
@@ -97,5 +131,37 @@ int main()
     const auto afterEdits = privateBytes();
     std::cout << editCycles << " pad copy/paste/swap/clear and snapshot cycles, "
               << beforeEdits << " to " << afterEdits << " private bytes\n";
+
+    const auto source = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                            .getChildFile ("hyperreal-benchmark-import.wav");
+    if (! writeImportWav (source))
+        return 4;
+    auto replace = [&engine, &audio, &midi, &settings, &source] (int cycle)
+    {
+        const auto pad = cycle % SampleEngine::padCount;
+        engine.requestLoad (pad, source);
+        for (int attempt = 0; attempt < 1000; ++attempt)
+        {
+            engine.process (audio, midi, settings);
+            const auto snapshot = engine.getSnapshot (pad);
+            if (snapshot.getProperty ("status", {}).toString() == "ready"
+                && snapshot.getProperty ("sampleName", {}).toString() == source.getFileName())
+                return true;
+            std::this_thread::sleep_for (std::chrono::milliseconds (1));
+        }
+        return false;
+    };
+    for (int cycle = 0; cycle < 100; ++cycle)
+        if (! replace (cycle))
+            return 5;
+    const auto beforeImports = privateBytes();
+    constexpr int importCycles = 1000;
+    for (int cycle = 0; cycle < importCycles; ++cycle)
+        if (! replace (cycle))
+            return 6;
+    const auto afterImports = privateBytes();
+    source.deleteFile();
+    std::cout << importCycles << " worker sample replacements while processing, "
+              << beforeImports << " to " << afterImports << " private bytes\n";
     return 0;
 }
