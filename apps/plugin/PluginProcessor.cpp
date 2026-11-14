@@ -139,6 +139,65 @@ bool HyperrealAudioProcessor::setPadSolo (const juce::var& command)
 {
     return setPadDiscreteParameter (command, "solo", 1);
 }
+std::array<float, 5> HyperrealAudioProcessor::readPadSettings (int pad) const
+{
+    return { padLevelParameters[pad]->load(), padModeParameters[pad]->load(),
+             padChokeParameters[pad]->load(), padMuteParameters[pad]->load(),
+             padSoloParameters[pad]->load() };
+}
+
+void HyperrealAudioProcessor::applyPadSettings (int pad, const std::array<float, 5>& values)
+{
+    constexpr const char* names[] { "level", "mode", "choke", "mute", "solo" };
+    for (int index = 0; index < 5; ++index)
+    {
+        const auto id = juce::String::formatted ("pad.%02d.", pad + 1) + names[index] + ".v1";
+        if (auto* parameter = parameters.getParameter (id))
+        {
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 (values[index]));
+            parameter->endChangeGesture();
+        }
+    }
+}
+
+bool HyperrealAudioProcessor::copyPad (int pad)
+{
+    if (pad < 0 || pad >= padCount || ! engine.copyPad (pad))
+        return false;
+    clipboardSettings = readPadSettings (pad);
+    clipboardSettingsReady = true;
+    return true;
+}
+
+bool HyperrealAudioProcessor::pastePad (int pad)
+{
+    if (pad < 0 || pad >= padCount || ! clipboardSettingsReady || ! engine.pastePad (pad))
+        return false;
+    applyPadSettings (pad, clipboardSettings);
+    return true;
+}
+
+bool HyperrealAudioProcessor::swapPads (int first, int second)
+{
+    if (first < 0 || first >= padCount || second < 0 || second >= padCount || first == second)
+        return false;
+    const auto firstSettings = readPadSettings (first);
+    const auto secondSettings = readPadSettings (second);
+    if (! engine.swapPads (first, second))
+        return false;
+    applyPadSettings (first, secondSettings);
+    applyPadSettings (second, firstSettings);
+    return true;
+}
+
+bool HyperrealAudioProcessor::clearPad (int pad)
+{
+    if (pad < 0 || pad >= padCount || ! engine.clearPad (pad))
+        return false;
+    applyPadSettings (pad, { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f });
+    return true;
+}
 bool HyperrealAudioProcessor::setPadDiscreteParameter (const juce::var& command,
                                                         const char* name, int maximum)
 {

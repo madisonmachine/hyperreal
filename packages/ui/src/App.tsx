@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from 'react'
-import { audition, cancelLoad, chooseSample, readSnapshot, selectPad, setChokeGroup, setMasterGain, setPadMode, setPadMute, setPadSolo, type Snapshot } from './bridge'
+import { audition, cancelLoad, chooseSample, clearPad, copyPad, pastePad, readSnapshot, selectPad, setChokeGroup, setMasterGain, setPadMode, setPadMute, setPadSolo, swapPads, type Snapshot } from './bridge'
 
 const initial: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
@@ -8,11 +8,14 @@ const initial: Snapshot = {
   })),
   sampleName: '', status: 'empty', message: '', durationSeconds: 0,
   sampleRate: 0, masterGain: 1, padLevel: 1, padMode: 0, chokeGroup: 0,
-  muted: false, solo: false
+  muted: false, solo: false, clipboardReady: false
 }
 
 export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>(initial)
+  const [swapTarget, setSwapTarget] = useState(1)
+  const [pending, setPending] = useState<{ kind: 'paste'|'swap'|'clear'; pad: number; otherPad?: number } | null>(null)
+  const [operationError, setOperationError] = useState('')
   useEffect(() => {
     let alive = true
     const refresh = async () => {
@@ -32,6 +35,14 @@ export default function App() {
 
   const selected = snapshot.selectedPad
   const selectedLabel = String(selected + 1).padStart(2, '0')
+  const confirmOperation = async () => {
+    if (!pending) return
+    const success = pending.kind === 'paste' ? await pastePad(pending.pad)
+      : pending.kind === 'swap' ? await swapPads(pending.pad, pending.otherPad ?? pending.pad)
+      : await clearPad(pending.pad)
+    setOperationError(success ? '' : 'PAD OPERATION FAILED. CHECK THE SAMPLE MEMORY LIMIT.')
+    setPending(null)
+  }
   return <main className="chassis">
     <header><div><strong>HYPERREAL</strong><small>16 PAD DRUM SAMPLER</small></div><span>PHASE 3 FOUNDATION</span></header>
     <section className="display" aria-live="polite">
@@ -49,10 +60,19 @@ export default function App() {
       <label><input type="checkbox" checked={snapshot.solo} onChange={event => { const value = event.target.checked; setSnapshot(current => ({ ...current, solo:value })); void setPadSolo(selected, value) }} /> SOLO</label>
       <span>PAD LEVEL {Math.round(snapshot.padLevel * 100)}%</span>
     </section>
+    <section className="pad-operations" aria-label="Pad operations">
+      <button onClick={() => { void copyPad(selected).then(success => setOperationError(success ? '' : 'COPY FAILED')) }}>COPY PAD {selectedLabel}</button>
+      <button disabled={!snapshot.clipboardReady} onClick={() => setPending({ kind: 'paste', pad: selected })}>PASTE TO {selectedLabel}</button>
+      <label>SWAP WITH <select value={swapTarget} onChange={event => setSwapTarget(Number(event.target.value))}>{snapshot.pads.map(pad => <option key={pad.index} value={pad.index}>PAD {String(pad.index + 1).padStart(2, '0')}</option>)}</select></label>
+      <button disabled={swapTarget === selected} onClick={() => setPending({ kind: 'swap', pad: selected, otherPad: swapTarget })}>SWAP</button>
+      <button onClick={() => setPending({ kind: 'clear', pad: selected })}>CLEAR</button>
+    </section>
+    {pending && <section className="operation-confirm"><span>CONFIRM {pending.kind.toUpperCase()} PAD {String(pending.pad + 1).padStart(2, '0')}{pending.otherPad !== undefined ? ' WITH '+String(pending.otherPad + 1).padStart(2, '0') : ''}?</span><button onClick={() => void confirmOperation()}>CONFIRM</button><button onClick={() => setPending(null)}>CANCEL</button></section>}
+    {operationError && <p className="operation-error" role="alert">{operationError}</p>}
     <section className="pads" aria-label="Sixteen drum pads">{snapshot.pads.map((pad) =>
       <button key={pad.midiNote}
         className={'pad '+(pad.index === selected ? 'selected ' : '')+(pad.status === 'ready' ? 'loaded ' : '')+(pad.muted ? 'muted ' : '')+(pad.solo ? 'solo' : '')}
-        onClick={() => void selectPad(pad.index)}
+        onClick={() => { setPending(null); setOperationError(''); void selectPad(pad.index) }}
         onDoubleClick={() => { if (pad.status === 'ready') void audition(pad.index) }}
         aria-label={'Select pad '+(pad.index+1)+', MIDI note '+pad.midiNote+', '+pad.status+(pad.muted ? ', muted' : '')+(pad.solo ? ', solo' : '')}
         aria-pressed={pad.index === selected}>

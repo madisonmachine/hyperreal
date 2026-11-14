@@ -249,6 +249,41 @@ int main()
         return 1;
     }
 
+    HyperrealAudioProcessor operations;
+    operations.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
+    if (! operations.copyPad (0) || ! operations.pastePad (2)
+        || ! operations.selectPad (2)
+        || operations.getSnapshot().getProperty ("status", {}).toString() != "ready"
+        || static_cast<int> (operations.getSnapshot().getProperty ("padMode", -1)) != 1
+        || static_cast<int> (operations.getSnapshot().getProperty ("chokeGroup", -1)) != 2
+        || ! static_cast<bool> (operations.getSnapshot().getProperty ("muted", false)))
+    {
+        std::cerr << "Pad paste did not copy sample and settings\n";
+        return 1;
+    }
+    if (! operations.swapPads (1, 2) || ! operations.selectPad (1)
+        || operations.getSnapshot().getProperty ("status", {}).toString() != "ready"
+        || ! static_cast<bool> (operations.getSnapshot().getProperty ("muted", false)))
+    {
+        std::cerr << "Pad swap did not move sample and settings\n";
+        return 1;
+    }
+    if (! operations.selectPad (2)
+        || operations.getSnapshot().getProperty ("status", {}).toString() != "empty"
+        || ! static_cast<bool> (operations.getSnapshot().getProperty ("solo", false)))
+    {
+        std::cerr << "Pad swap lost destination settings\n";
+        return 1;
+    }
+    if (! operations.clearPad (1) || ! operations.selectPad (1)
+        || operations.getSnapshot().getProperty ("status", {}).toString() != "empty"
+        || static_cast<bool> (operations.getSnapshot().getProperty ("muted", true))
+        || static_cast<int> (operations.getSnapshot().getProperty ("padMode", -1)) != 0)
+    {
+        std::cerr << "Pad clear did not reset sample and settings\n";
+        return 1;
+    }
+
     std::cout << "Processor state smoke passed\n";
     return 0;
 }

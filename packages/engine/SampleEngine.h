@@ -37,6 +37,10 @@ public:
     void requestLoad (int pad, juce::File file);
     void requestLoad (juce::File file) { requestLoad (0, std::move (file)); }
     void cancelLoad (int pad);
+    bool copyPad (int pad);
+    bool pastePad (int pad);
+    bool swapPads (int first, int second);
+    bool clearPad (int pad);
     void requestAudition (int pad) noexcept;
     void requestAudition() noexcept { requestAudition (0); }
     juce::var getSnapshot (int selectedPad = 0) const;
@@ -68,6 +72,7 @@ private:
     static bool readSample (juce::InputStream& input, std::unique_ptr<Sample>& sample,
                             juce::int64& decodedBytes);
     static void writeSample (juce::OutputStream& output, const Sample* sample);
+    static std::unique_ptr<Sample> cloneSample (const Sample* sample);
     void workerLoop();
     void publishSample (int pad, std::unique_ptr<Sample> next);
     void reapRetired();
@@ -90,6 +95,8 @@ private:
     std::array<juce::String, padCount> status;
     std::array<juce::String, padCount> message;
     std::array<std::unique_ptr<Sample>, padCount> current;
+    std::unique_ptr<Sample> clipboard;
+    bool clipboardReady = false;
     std::vector<std::unique_ptr<Sample>> retired;
 
     std::array<std::atomic<const Sample*>, padCount> activeSamples {};

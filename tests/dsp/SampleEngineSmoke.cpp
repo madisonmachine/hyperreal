@@ -292,6 +292,52 @@ int main()
         return 22;
     }
 
+    settings = {};
+    restored.prepare (44100.0);
+    if (! restored.copyPad (0) || ! restored.pastePad (2)
+        || restored.getSnapshot (2).getProperty ("status", {}).toString() != "ready")
+    {
+        std::cerr << "Copy and paste did not create a third pad\n";
+        return 23;
+    }
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 38, static_cast<juce::uint8> (127)), 0);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 0), 0.6f))
+    {
+        std::cerr << "Pasted pad did not play at its grid MIDI note\n";
+        return 24;
+    }
+    restored.prepare (44100.0);
+    if (! restored.swapPads (1, 2))
+        return 25;
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 37, static_cast<juce::uint8> (127)), 0);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 0), 0.6f))
+    {
+        std::cerr << "Swapped sample did not follow pad content\n";
+        return 26;
+    }
+    if (! restored.clearPad (1)
+        || restored.getSnapshot (1).getProperty ("status", {}).toString() != "empty")
+        return 27;
+    midi.clear();
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 0), 0.6f))
+    {
+        std::cerr << "Clear interrupted an already playing voice\n";
+        return 28;
+    }
+    restored.prepare (44100.0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 37, static_cast<juce::uint8> (127)), 0);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 0), 0.0f))
+    {
+        std::cerr << "Cleared pad still accepted MIDI trigger\n";
+        return 29;
+    }
+
     std::cout << "SampleEngine multi-pad smoke passed\n";
     return 0;
 }

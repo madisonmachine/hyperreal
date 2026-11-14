@@ -16,6 +16,7 @@ export type Snapshot = {
   chokeGroup: number
   muted: boolean
   solo: boolean
+  clipboardReady: boolean
 }
 const demo: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
@@ -24,7 +25,8 @@ const demo: Snapshot = {
   })),
   sampleName: '', status: 'empty', message: 'Open the plugin to load a sample.',
   durationSeconds: 0, sampleRate: 0, masterGain: 1,
-  padLevel: 1, padMode: 0, chokeGroup: 0, muted: false, solo: false
+  padLevel: 1, padMode: 0, chokeGroup: 0, muted: false, solo: false,
+  clipboardReady: false
 }
 const nativeAvailable = () => Boolean((window as Window & { __JUCE__?: unknown }).__JUCE__)
 export async function readSnapshot(): Promise<Snapshot> {
@@ -56,4 +58,16 @@ export async function setPadMute(pad: number, value: boolean): Promise<void> {
 }
 export async function setPadSolo(pad: number, value: boolean): Promise<void> {
   if (nativeAvailable()) await getNativeFunction('setPadSolo')({ schemaVersion: 3, pad, value: Number(value) })
+}
+export async function copyPad(pad: number): Promise<boolean> {
+  return nativeAvailable() ? Boolean(await getNativeFunction('copyPad')({ schemaVersion: 4, pad })) : false
+}
+export async function pastePad(pad: number): Promise<boolean> {
+  return nativeAvailable() ? Boolean(await getNativeFunction('pastePad')({ schemaVersion: 4, pad, confirmed: true })) : false
+}
+export async function swapPads(pad: number, otherPad: number): Promise<boolean> {
+  return nativeAvailable() ? Boolean(await getNativeFunction('swapPads')({ schemaVersion: 4, pad, otherPad, confirmed: true })) : false
+}
+export async function clearPad(pad: number): Promise<boolean> {
+  return nativeAvailable() ? Boolean(await getNativeFunction('clearPad')({ schemaVersion: 4, pad, confirmed: true })) : false
 }

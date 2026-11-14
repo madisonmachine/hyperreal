@@ -87,6 +87,85 @@ void SampleEngine::cancelLoad (int pad)
     message[pad] = "Sample load cancelled.";
 }
 
+std::unique_ptr<SampleEngine::Sample> SampleEngine::cloneSample (const Sample* source)
+{
+    if (source == nullptr)
+        return nullptr;
+    auto copy = std::make_unique<Sample>();
+    copy->audio.makeCopyOf (source->audio);
+    copy->sampleRate = source->sampleRate;
+    copy->name = source->name;
+    return copy;
+}
+
+bool SampleEngine::copyPad (int pad)
+{
+    if (pad < 0 || pad >= padCount)
+        return false;
+    std::lock_guard lock (controlMutex);
+    clipboard = cloneSample (current[pad].get());
+    clipboardReady = true;
+    message[pad] = "Pad copied. Select a destination and choose PASTE.";
+    return true;
+}
+
+bool SampleEngine::pastePad (int pad)
+{
+    if (pad < 0 || pad >= padCount)
+        return false;
+    std::lock_guard lock (controlMutex);
+    if (! clipboardReady)
+        return false;
+    auto bytes = clipboard != nullptr ? sampleBytes (clipboard->audio) : 0;
+    for (int other = 0; other < padCount; ++other)
+        if (other != pad && current[other] != nullptr)
+            bytes += sampleBytes (current[other]->audio);
+    if (bytes > maxKitBytes)
+    {
+        message[pad] = "Paste exceeds the 512 MB kit sample limit.";
+        return false;
+    }
+    auto replacement = cloneSample (clipboard.get());
+    pendingLoads[pad] = false;
+    ++loadGenerations[pad];
+    publishSample (pad, std::move (replacement));
+    status[pad] = current[pad] != nullptr ? "ready" : "empty";
+    message[pad] = "Pad pasted. MIDI note remains attached to this slot.";
+    reapRetired();
+    return true;
+}
+
+bool SampleEngine::swapPads (int first, int second)
+{
+    if (first < 0 || first >= padCount || second < 0 || second >= padCount || first == second)
+        return false;
+    std::lock_guard lock (controlMutex);
+    pendingLoads[first] = pendingLoads[second] = false;
+    ++loadGenerations[first];
+    ++loadGenerations[second];
+    std::swap (current[first], current[second]);
+    activeSamples[first].store (current[first].get());
+    activeSamples[second].store (current[second].get());
+    status[first] = current[first] != nullptr ? "ready" : "empty";
+    status[second] = current[second] != nullptr ? "ready" : "empty";
+    message[first] = message[second] = "Pad content swapped; MIDI notes stay with grid slots.";
+    return true;
+}
+
+bool SampleEngine::clearPad (int pad)
+{
+    if (pad < 0 || pad >= padCount)
+        return false;
+    std::lock_guard lock (controlMutex);
+    pendingLoads[pad] = false;
+    ++loadGenerations[pad];
+    publishSample (pad, nullptr);
+    status[pad] = "empty";
+    message[pad] = "Pad cleared. Existing voices may finish playing.";
+    reapRetired();
+    return true;
+}
+
 void SampleEngine::requestAudition (int pad) noexcept
 {
     if (pad >= 0 && pad < padCount)
@@ -291,6 +370,7 @@ juce::var SampleEngine::getSnapshot (int selectedPad) const
     auto* object = new juce::DynamicObject();
     object->setProperty ("schemaVersion", 2);
     object->setProperty ("selectedPad", selectedPad);
+    object->setProperty ("clipboardReady", clipboardReady);
     object->setProperty ("status", status[selectedPad]);
     object->setProperty ("message", message[selectedPad]);
     object->setProperty ("sampleName", current[selectedPad] != nullptr

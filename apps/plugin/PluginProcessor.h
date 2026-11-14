@@ -41,11 +41,17 @@ public:
     bool setPadChokeGroup (const juce::var& command);
     bool setPadMute (const juce::var& command);
     bool setPadSolo (const juce::var& command);
+    bool copyPad (int pad);
+    bool pastePad (int pad);
+    bool swapPads (int first, int second);
+    bool clearPad (int pad);
 
 private:
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     bool setPadDiscreteParameter (const juce::var& command, const char* name, int maximum);
+    std::array<float, 5> readPadSettings (int pad) const;
+    void applyPadSettings (int pad, const std::array<float, 5>& values);
 
     juce::AudioProcessorValueTreeState parameters;
     SampleEngine engine;
@@ -54,6 +60,8 @@ private:
     std::array<std::atomic<float>*, SampleEngine::padCount> padChokeParameters {};
     std::array<std::atomic<float>*, SampleEngine::padCount> padMuteParameters {};
     std::array<std::atomic<float>*, SampleEngine::padCount> padSoloParameters {};
+    std::array<float, 5> clipboardSettings { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+    bool clipboardSettingsReady = false;
     std::atomic<int> selectedPad { 0 };
     juce::SmoothedValue<float> smoothedMasterGain;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HyperrealAudioProcessor)

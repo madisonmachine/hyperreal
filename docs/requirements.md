@@ -9,7 +9,7 @@ The product brief is authoritative for instrument behaviour. The design brief ad
 | CI, changelog and documented build | Product brief, plan | 1 | Main and Phase 2 pull request runs passed |
 | Local React/WebView bundle and native bridge | Design brief, plan | 2 | Cubase editor opened; LOAD and AUDITION passed |
 | One-pad import, MIDI, audition, offline use and recall | Product brief, plan | 2 | Cubase import, audition, source-free recall and editor-closed MIDI passed; offline prerequisite prepared; disconnected clean-machine check pending |
-| Sixteen pads, MIDI 36-51, sample operations and voices | Product brief | 3 | Independent slots, MIDI and fixed voice pool built; pad operations and host test pending |
+| Sixteen pads, MIDI 36-51, sample operations and voices | Product brief | 3 | Independent slots, MIDI, fixed voice pool and copy/paste/swap/clear built; drag/drop and Cubase host test pending |
 | One-shot/gated, velocity, polyphony, choke, mute and solo | Product brief | 3 | One-shot, gate, velocity, fixed overlap, choke and mute/multi-solo built; adjustable velocity/polyphony, click-free stealing and Cubase validation pending |
 | Non-destructive trim, fades, reverse and tuning | Product brief | 4 | Pending |
 | Amplitude/filter envelopes, filters, LFO and automation | Product brief | 5 | Pending |

@@ -20,6 +20,8 @@ Status: in progress, 14 November 2026. This branch is based on the Phase 2 draft
 
 Mute and multi-solo were added after the note controls. Each pad has Boolean host parameters for mute and solo, with mute taking precedence. Muted or excluded pads reject new triggers; active voices fade over 5 ms. The grid shows MUTED or SOLO status. HRP5 persists these settings and reads HRP4, HRP3 and HRP2 states. Engine tests cover mute, two soloed pads and transition fades; processor tests cover command validation, state recall and HRP4 migration.
 
+Pad copy, paste, swap and clear now move the sample and all current per-pad settings. Copy captures a separate, temporary buffer; paste checks the 512 MB active kit limit. Swap exchanges content while MIDI notes remain attached to grid slots. Paste, swap and clear cancel pending imports for affected pads, and voices already playing retain their original sample. The editor requires a second confirmation step for paste, swap and clear. The engine and processor tests cover sample and setting transfer, fixed MIDI mapping, clearing and active-voice retention. The clipboard is editor-session data and is not saved in host state.
+
 - The React/TypeScript UI production build passed.
 - The Release VST3 and standalone build passed.
 - Release pluginval strictness 5 passed, including editor creation and automation checks.
@@ -28,8 +30,8 @@ Mute and multi-solo were added after the note controls. Each pad has Boolean hos
 
 ## Checks and features not yet completed
 
-- Manual Cubase Pro 15 validation of the 0.3.0 editor, loading multiple pads, MIDI 36 to 51, mode and choke controls, cancellation, automation and saved-project recall. The installed 0.2.0 build remains the Cubase-verified version; 0.3.0 has not yet been installed or tested in Cubase.
-- Drag-and-drop import, pad copy/paste/swap/clear, adjustable velocity response and configurable polyphony.
+- Manual Cubase Pro 15 validation of the 0.3.0 editor, loading multiple pads, MIDI 36 to 51, mode, choke, mute/solo and pad operations, cancellation, automation and saved-project recall. The installed 0.2.0 build remains the Cubase-verified version; 0.3.0 has not yet been installed or tested in Cubase.
+- Drag-and-drop import, adjustable velocity response and configurable polyphony.
 - Anti-click fades when stealing voices at the four-voice pad limit or 64-voice global limit; MIDI-channel-aware repeated-note ownership and transport reset behavior.
 - Dense-trigger performance measurement and long-session memory stress.
 - The Phase 2 clean disconnected-Windows installation test remains open. The signed offline WebView2 installer and readiness check are prepared, but this PC has no clean Windows VM. This check remains a release gate.

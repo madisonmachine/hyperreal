@@ -12,12 +12,13 @@ std::vector<std::byte> copyResource (const char* data, int size)
     return bytes;
 }
 
-std::optional<int> padFromCommand (const juce::var& command)
+std::optional<int> padFromCommand (const juce::var& command, int version = 2,
+                                   const char* property = "pad")
 {
     if (! command.isObject()
-        || static_cast<int> (command.getProperty ("schemaVersion", 0)) != 2)
+        || static_cast<int> (command.getProperty ("schemaVersion", 0)) != version)
         return std::nullopt;
-    const auto value = command.getProperty ("pad", -1);
+    const auto value = command.getProperty (property, -1);
     if (! (value.isInt() || value.isInt64() || value.isDouble()))
         return std::nullopt;
     const auto number = static_cast<double> (value);
@@ -26,6 +27,12 @@ std::optional<int> padFromCommand (const juce::var& command)
         return std::nullopt;
     const auto pad = static_cast<int> (number);
     return pad;
+}
+
+bool confirmedCommand (const juce::var& command)
+{
+    const auto confirmed = command.getProperty ("confirmed", false);
+    return confirmed.isBool() && static_cast<bool> (confirmed);
 }
 }
 
@@ -103,10 +110,40 @@ HyperrealAudioProcessorEditor::HyperrealAudioProcessorEditor (HyperrealAudioProc
                            processor.requestAudition (*pad);
                        complete (pad.has_value());
                    })
+                   .withNativeFunction ("copyPad", [this] (const auto& arguments, auto complete)
+                   {
+                       const auto pad = arguments.size() == 1
+                                          ? padFromCommand (arguments[0], 4) : std::nullopt;
+                       complete (pad.has_value() && processor.copyPad (*pad));
+                   })
+                   .withNativeFunction ("pastePad", [this] (const auto& arguments, auto complete)
+                   {
+                       const auto pad = arguments.size() == 1
+                                          ? padFromCommand (arguments[0], 4) : std::nullopt;
+                       complete (pad.has_value() && confirmedCommand (arguments[0])
+                                 && processor.pastePad (*pad));
+                   })
+                   .withNativeFunction ("swapPads", [this] (const auto& arguments, auto complete)
+                   {
+                       const auto first = arguments.size() == 1
+                                              ? padFromCommand (arguments[0], 4) : std::nullopt;
+                       const auto second = arguments.size() == 1
+                                               ? padFromCommand (arguments[0], 4, "otherPad") : std::nullopt;
+                       complete (first.has_value() && second.has_value()
+                                 && confirmedCommand (arguments[0])
+                                 && processor.swapPads (*first, *second));
+                   })
+                   .withNativeFunction ("clearPad", [this] (const auto& arguments, auto complete)
+                   {
+                       const auto pad = arguments.size() == 1
+                                          ? padFromCommand (arguments[0], 4) : std::nullopt;
+                       complete (pad.has_value() && confirmedCommand (arguments[0])
+                                 && processor.clearPad (*pad));
+                   })
                    .withResourceProvider ([] (const auto& path) { return getResource (path); }))
 {
     addAndMakeVisible (browser);
-    setSize (820, 820);
+    setSize (820, 900);
     browser.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
 }
 
