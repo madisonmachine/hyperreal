@@ -38,7 +38,7 @@ void writeWav (const juce::File& file, int value)
     for (int frame = 0; frame < frames; ++frame)
         write16 (wav, static_cast<unsigned int> (value));
 }
-void writeRampWav (const juce::File& file)
+void writeRampWav (const juce::File& file, int rate = 44100)
 {
     constexpr int frames = 256;
     std::ofstream wav (file.getFullPathName().toStdString(), std::ios::binary);
@@ -48,8 +48,8 @@ void writeRampWav (const juce::File& file)
     write32 (wav, 16);
     write16 (wav, 1);
     write16 (wav, 1);
-    write32 (wav, 44100);
-    write32 (wav, 88200);
+    write32 (wav, static_cast<unsigned int> (rate));
+    write32 (wav, static_cast<unsigned int> (rate * 2));
     write16 (wav, 2);
     write16 (wav, 16);
     wav.write ("data", 4);
@@ -663,6 +663,27 @@ int main()
     {
         std::cerr << "Phase 4 edit state did not round-trip\n";
         return 51;
+    }
+    const auto excessiveRate = folder.getChildFile ("hyperreal-phase4-rate-500k.wav");
+    writeRampWav (excessiveRate, 500000);
+    edited.requestLoad (0, excessiveRate);
+    bool rejectedRate = false;
+    for (int attempt = 0; attempt < 300; ++attempt)
+    {
+        const auto snapshot = edited.getSnapshot();
+        if (snapshot.getProperty ("message", {}).toString().contains ("unsupported"))
+        {
+            rejectedRate = snapshot.getProperty ("status", {}).toString() == "ready"
+                && static_cast<int> (snapshot.getProperty ("sourceFrames", -1)) == 256;
+            break;
+        }
+        std::this_thread::sleep_for (std::chrono::milliseconds (10));
+    }
+    excessiveRate.deleteFile();
+    if (! rejectedRate)
+    {
+        std::cerr << "Unsupported source rate replaced an active sample\n";
+        return 58;
     }
     ramp.deleteFile();
 

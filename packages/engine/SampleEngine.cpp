@@ -705,7 +705,8 @@ void SampleEngine::workerLoop()
                          : formats.createReaderFor (file)))
         {
             if (reader->numChannels < 1 || reader->numChannels > maxChannels
-                || ! std::isfinite (reader->sampleRate) || reader->sampleRate <= 0.0
+                || ! std::isfinite (reader->sampleRate)
+                || reader->sampleRate <= 0.0 || reader->sampleRate > 384000.0
                 || reader->lengthInSamples < 1
                 || reader->lengthInSamples > maxDurationSeconds * reader->sampleRate
                 || reader->lengthInSamples > std::numeric_limits<int>::max()
@@ -845,7 +846,6 @@ bool SampleEngine::readSample (juce::InputStream& input, std::unique_ptr<Sample>
             data->audio.setSample (channel, frame, value);
         }
     restored->data = data;
-    buildWaveform (*data);
     restored->edit = defaultEdit (frames, sampleRate);
     if (hasEdits)
     {
@@ -867,6 +867,7 @@ bool SampleEngine::readSample (juce::InputStream& input, std::unique_ptr<Sample>
         edit.reversed = reverse == 1;
         restored->edit = edit;
     }
+    buildWaveform (*data);
     sample = std::move (restored);
     decodedBytes = bytes;
     return true;

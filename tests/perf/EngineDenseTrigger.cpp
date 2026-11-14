@@ -71,6 +71,11 @@ int main()
             output.writeInt (4410);
             for (int frame = 0; frame < 4410; ++frame)
                 output.writeFloat (0.2f);
+            output.writeInt (0);    // Trim start.
+            output.writeInt (4410); // Exclusive trim end.
+            output.writeInt (0);    // Fade in.
+            output.writeInt (220);  // Default 5 ms fade out at 44.1 kHz.
+            output.writeByte (0);   // Forward playback.
         }
     }
 
