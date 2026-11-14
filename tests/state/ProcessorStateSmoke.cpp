@@ -69,6 +69,24 @@ int main()
         std::cerr << "Master gain command failed\n";
         return 1;
     }
+    auto setting = [] (int pad, int value)
+    {
+        auto* item = new juce::DynamicObject();
+        item->setProperty ("schemaVersion", 3);
+        item->setProperty ("pad", pad);
+        item->setProperty ("value", value);
+        return juce::var (item);
+    };
+    const auto modeSet = original.setPadMode (setting (0, 1));
+    const auto chokeSet = original.setPadChokeGroup (setting (0, 2));
+    const auto invalidPadAccepted = original.setPadMode (setting (16, 1));
+    const auto invalidChokeAccepted = original.setPadChokeGroup (setting (0, 5));
+    if (! modeSet || ! chokeSet || invalidPadAccepted || invalidChokeAccepted)
+    {
+        std::cerr << "Pad setting command validation failed: " << modeSet << ' '
+                  << chokeSet << ' ' << invalidPadAccepted << ' ' << invalidChokeAccepted << "\n";
+        return 1;
+    }
 
     juce::MemoryBlock state;
     original.getStateInformation (state);
@@ -83,6 +101,28 @@ int main()
     const auto parameterSize = stateReader.readInt();
     juce::MemoryBlock parameterBytes (static_cast<size_t> (parameterSize));
     stateReader.read (parameterBytes.getData(), parameterSize);
+    auto phase3Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
+                                                           parameterBytes.getSize());
+    phase3Parameters.setProperty ("schema_version", 3, nullptr);
+    for (int child = phase3Parameters.getNumChildren() - 1; child >= 0; --child)
+    {
+        const auto id = phase3Parameters.getChild (child).getProperty ("id").toString();
+        if (id.contains (".mode.") || id.contains (".choke."))
+            phase3Parameters.removeChild (child, nullptr);
+    }
+    juce::MemoryBlock phase3State;
+    {
+        juce::MemoryBlock phase3ParametersBytes;
+        juce::MemoryOutputStream parameterOutput (phase3ParametersBytes, false);
+        phase3Parameters.writeToStream (parameterOutput);
+        juce::MemoryOutputStream output (phase3State, false);
+        output.write ("HRP3", 4);
+        output.writeInt (3);
+        output.writeInt (static_cast<int> (phase3ParametersBytes.getSize()));
+        output.write (phase3ParametersBytes.getData(), phase3ParametersBytes.getSize());
+        output.write (static_cast<const char*> (stateReader.getData()) + stateReader.getPosition(),
+                      static_cast<size_t> (stateReader.getNumBytesRemaining()));
+    }
     auto phase2Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
                                                            parameterBytes.getSize());
     phase2Parameters.setProperty ("schema_version", 2, nullptr);
@@ -113,7 +153,9 @@ int main()
     restored.prepareToPlay (44100.0, 128);
     const auto snapshot = restored.getSnapshot();
     if (snapshot.getProperty ("status", {}).toString() != "ready"
-        || std::abs (static_cast<double> (snapshot.getProperty ("masterGain", 0.0)) - 0.5) > 0.001)
+        || std::abs (static_cast<double> (snapshot.getProperty ("masterGain", 0.0)) - 0.5) > 0.001
+        || static_cast<int> (snapshot.getProperty ("padMode", -1)) != 1
+        || static_cast<int> (snapshot.getProperty ("chokeGroup", -1)) != 2)
     {
         std::cerr << "Full project state did not restore\n";
         return 1;
@@ -153,6 +195,15 @@ int main()
     if (audio.getMagnitude (0, 0, 128) < 0.15f)
     {
         std::cerr << "Migrated Phase 2 sample did not play\n";
+        return 1;
+    }
+    HyperrealAudioProcessor phase3Migrated;
+    phase3Migrated.setStateInformation (phase3State.getData(), static_cast<int> (phase3State.getSize()));
+    if (phase3Migrated.getSnapshot().getProperty ("status", {}).toString() != "ready"
+        || static_cast<int> (phase3Migrated.getSnapshot().getProperty ("padMode", -1)) != 0
+        || static_cast<int> (phase3Migrated.getSnapshot().getProperty ("chokeGroup", -1)) != 0)
+    {
+        std::cerr << "Phase 3 project migration failed\n";
         return 1;
     }
 

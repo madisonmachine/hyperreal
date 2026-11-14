@@ -11,6 +11,9 @@ export type Snapshot = {
   durationSeconds: number
   sampleRate: number
   masterGain: number
+  padLevel: number
+  padMode: number
+  chokeGroup: number
 }
 const demo: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
@@ -18,7 +21,8 @@ const demo: Snapshot = {
     index, midiNote: index + 36, status: 'empty', sampleName: ''
   })),
   sampleName: '', status: 'empty', message: 'Open the plugin to load a sample.',
-  durationSeconds: 0, sampleRate: 0, masterGain: 1
+  durationSeconds: 0, sampleRate: 0, masterGain: 1,
+  padLevel: 1, padMode: 0, chokeGroup: 0
 }
 const nativeAvailable = () => Boolean((window as Window & { __JUCE__?: unknown }).__JUCE__)
 export async function readSnapshot(): Promise<Snapshot> {
@@ -38,4 +42,10 @@ export async function audition(pad: number): Promise<void> {
 }
 export async function setMasterGain(value: number): Promise<void> {
   if (nativeAvailable()) await getNativeFunction('setMasterGain')({ schemaVersion: 1, value })
+}
+export async function setPadMode(pad: number, value: number): Promise<void> {
+  if (nativeAvailable()) await getNativeFunction('setPadMode')({ schemaVersion: 3, pad, value })
+}
+export async function setChokeGroup(pad: number, value: number): Promise<void> {
+  if (nativeAvailable()) await getNativeFunction('setChokeGroup')({ schemaVersion: 3, pad, value })
 }

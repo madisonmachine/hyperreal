@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from 'react'
-import { audition, cancelLoad, chooseSample, readSnapshot, selectPad, setMasterGain, type Snapshot } from './bridge'
+import { audition, cancelLoad, chooseSample, readSnapshot, selectPad, setChokeGroup, setMasterGain, setPadMode, type Snapshot } from './bridge'
 
 const initial: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
@@ -7,7 +7,7 @@ const initial: Snapshot = {
     index, midiNote: index + 36, status: 'empty', sampleName: ''
   })),
   sampleName: '', status: 'empty', message: '', durationSeconds: 0,
-  sampleRate: 0, masterGain: 1
+  sampleRate: 0, masterGain: 1, padLevel: 1, padMode: 0, chokeGroup: 0
 }
 
 export default function App() {
@@ -41,6 +41,11 @@ export default function App() {
     </section>
     <nav><button onClick={() => void chooseSample()} disabled={snapshot.status === 'loading'}>LOAD TO PAD {selectedLabel}</button><button onClick={() => void audition(selected)} disabled={snapshot.status !== 'ready'}>AUDITION PAD {selectedLabel}</button>{snapshot.status === 'loading' && <button onClick={() => void cancelLoad(selected)}>CANCEL LOAD</button>}</nav>
     <label className="gain">MASTER GAIN <input type="range" min="0" max="1" step="0.01" value={snapshot.masterGain} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, masterGain:value })); void setMasterGain(value) }} /><output>{Math.round(snapshot.masterGain * 100)}%</output></label>
+    <section className="pad-settings" aria-label={'Pad '+selectedLabel+' playback settings'}>
+      <label>MODE <select value={snapshot.padMode} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, padMode:value })); void setPadMode(selected, value) }}><option value={0}>ONE-SHOT</option><option value={1}>GATE</option></select></label>
+      <label>CHOKE GROUP <select value={snapshot.chokeGroup} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, chokeGroup:value })); void setChokeGroup(selected, value) }}>{[0,1,2,3,4].map(group => <option key={group} value={group}>{group === 0 ? 'OFF' : group}</option>)}</select></label>
+      <span>PAD LEVEL {Math.round(snapshot.padLevel * 100)}%</span>
+    </section>
     <section className="pads" aria-label="Sixteen drum pads">{snapshot.pads.map((pad) =>
       <button key={pad.midiNote}
         className={'pad '+(pad.index === selected ? 'selected ' : '')+(pad.status === 'ready' ? 'loaded' : '')}

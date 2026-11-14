@@ -167,6 +167,84 @@ int main()
         return 10;
     }
 
+    SampleEngine::PlaybackSettings settings {};
+    settings[0].gated = true;
+    restored.prepare (44100.0);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    midi.addEvent (juce::MidiMessage::noteOff (1, 36), 64);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 32), 0.6f)
+        || audio.getSample (0, 127) >= 0.55f)
+    {
+        std::cerr << "Gated note-off did not begin release\n";
+        return 11;
+    }
+    midi.clear();
+    restored.process (audio, midi, settings);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 127), 0.0f))
+    {
+        std::cerr << "Gated release did not finish\n";
+        return 12;
+    }
+
+    settings[0].gated = false;
+    restored.prepare (44100.0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    midi.addEvent (juce::MidiMessage::noteOff (1, 36), 32);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 127), 0.6f))
+    {
+        std::cerr << "One-shot note-off stopped playback\n";
+        return 13;
+    }
+
+    settings[0].chokeGroup = 1;
+    settings[1].chokeGroup = 1;
+    restored.prepare (44100.0);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 37, static_cast<juce::uint8> (127)), 64);
+    restored.process (audio, midi, settings);
+    if (audio.getSample (0, 127) <= 0.4f || audio.getSample (0, 127) >= 0.95f)
+    {
+        std::cerr << "Choke did not fade the earlier one-shot\n";
+        return 14;
+    }
+    midi.clear();
+    restored.process (audio, midi, settings);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 127), 0.4f))
+    {
+        std::cerr << "Choked voice did not end\n";
+        return 15;
+    }
+
+    restored.prepare (44100.0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    midi.addEvent (juce::MidiMessage::controllerEvent (1, 123, 0), 32);
+    restored.process (audio, midi, settings);
+    midi.clear();
+    restored.process (audio, midi, settings);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 127), 0.0f))
+    {
+        std::cerr << "All-notes-off left a voice playing\n";
+        return 16;
+    }
+
+    settings[0].chokeGroup = 0;
+    settings[0].level = 0.5f;
+    restored.prepare (44100.0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 0), 0.3f))
+    {
+        std::cerr << "Per-pad level did not affect rendered audio\n";
+        return 17;
+    }
+
     std::cout << "SampleEngine multi-pad smoke passed\n";
     return 0;
 }

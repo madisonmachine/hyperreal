@@ -17,12 +17,21 @@ public:
     static constexpr int padCount = 16;
     static constexpr int firstMidiNote = 36;
     static constexpr int maxVoices = 64;
+    struct PadPlaybackSettings
+    {
+        bool gated = false;
+        int chokeGroup = 0;
+        float level = 1.0f;
+    };
+    using PlaybackSettings = std::array<PadPlaybackSettings, padCount>;
 
     SampleEngine();
     ~SampleEngine();
 
     void prepare (double hostSampleRate) noexcept;
     void process (juce::AudioBuffer<float>& output, const juce::MidiBuffer& midi) noexcept;
+    void process (juce::AudioBuffer<float>& output, const juce::MidiBuffer& midi,
+                  const PlaybackSettings& settings) noexcept;
     void requestLoad (int pad, juce::File file);
     void requestLoad (juce::File file) { requestLoad (0, std::move (file)); }
     void cancelLoad (int pad);
@@ -47,6 +56,11 @@ private:
         float gain = 0.0f;
         int pad = 0;
         juce::uint64 sequence = 0;
+        bool gated = false;
+        bool noteHeld = false;
+        int chokeGroup = 0;
+        int releaseRemaining = 0;
+        int releaseTotal = 0;
     };
 
     static bool readSample (juce::InputStream& input, std::unique_ptr<Sample>& sample,
@@ -55,8 +69,13 @@ private:
     void workerLoop();
     void publishSample (int pad, std::unique_ptr<Sample> next);
     void reapRetired();
-    void startVoice (int pad, float velocity) noexcept;
-    void renderRange (juce::AudioBuffer<float>& output, int begin, int end) noexcept;
+    void startVoice (int pad, float velocity, bool audition,
+                     const PlaybackSettings& settings) noexcept;
+    void noteOff (int pad) noexcept;
+    void releaseAll() noexcept;
+    void beginRelease (Voice& voice) noexcept;
+    void renderRange (juce::AudioBuffer<float>& output, int begin, int end,
+                      const PlaybackSettings& settings) noexcept;
 
     mutable std::mutex controlMutex;
     std::condition_variable controlChanged;

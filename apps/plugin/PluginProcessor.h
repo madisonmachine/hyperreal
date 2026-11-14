@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "../../packages/engine/SampleEngine.h"
+#include <array>
 
 class HyperrealAudioProcessor final : public juce::AudioProcessor
 {
@@ -36,13 +37,19 @@ public:
     int getSelectedPad() const noexcept { return selectedPad.load(); }
     juce::var getSnapshot() const;
     bool setMasterGain (const juce::var& command);
+    bool setPadMode (const juce::var& command);
+    bool setPadChokeGroup (const juce::var& command);
 
 private:
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    bool setPadDiscreteParameter (const juce::var& command, const char* name, int maximum);
 
     juce::AudioProcessorValueTreeState parameters;
     SampleEngine engine;
+    std::array<std::atomic<float>*, SampleEngine::padCount> padLevelParameters {};
+    std::array<std::atomic<float>*, SampleEngine::padCount> padModeParameters {};
+    std::array<std::atomic<float>*, SampleEngine::padCount> padChokeParameters {};
     std::atomic<int> selectedPad { 0 };
     juce::SmoothedValue<float> smoothedMasterGain;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HyperrealAudioProcessor)

@@ -65,6 +65,14 @@ HyperrealAudioProcessorEditor::HyperrealAudioProcessorEditor (HyperrealAudioProc
                    {
                        complete (arguments.size() == 1 && processor.setMasterGain (arguments[0]));
                    })
+                   .withNativeFunction ("setPadMode", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && processor.setPadMode (arguments[0]));
+                   })
+                   .withNativeFunction ("setChokeGroup", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && processor.setPadChokeGroup (arguments[0]));
+                   })
                    .withNativeFunction ("selectPad", [this] (const auto& arguments, auto complete)
                    {
                        const auto pad = arguments.size() == 1
@@ -90,7 +98,7 @@ HyperrealAudioProcessorEditor::HyperrealAudioProcessorEditor (HyperrealAudioProc
                    .withResourceProvider ([] (const auto& path) { return getResource (path); }))
 {
     addAndMakeVisible (browser);
-    setSize (820, 700);
+    setSize (820, 820);
     browser.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
 }
 
