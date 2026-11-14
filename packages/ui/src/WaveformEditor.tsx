@@ -13,8 +13,10 @@ const fromSnapshot = (snapshot: Snapshot): EditDraft => ({
 export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const dragging = useRef<Marker | null>(null)
+  const summaries = useRef(new Map<string, Waveform>())
   const [draft, setDraft] = useState<EditDraft>(() => fromSnapshot(snapshot))
   const [waveform, setWaveform] = useState<Waveform | null>(null)
+  const [canvasWidth, setCanvasWidth] = useState(0)
   const [zoom, setZoom] = useState(1)
   const [view, setView] = useState(0)
   const [error, setError] = useState('')
@@ -35,21 +37,43 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
 
   useEffect(() => {
     let alive = true
-    setWaveform(null)
     if (frames > 0) {
       const level = zoom >= 4 ? 3 : 2
-      void readWaveform(snapshot.selectedPad, level).then(next => {
-        if (alive && next?.sampleRevision === snapshot.sampleRevision) setWaveform(next)
-      }).catch(() => { if (alive) setError('WAVEFORM OVERVIEW UNAVAILABLE') })
-    }
+      const key = `${snapshot.selectedPad}:${snapshot.sampleRevision}:${level}`
+      const cached = summaries.current.get(key)
+      if (cached) setWaveform(cached)
+      else {
+        setWaveform(null)
+        void readWaveform(snapshot.selectedPad, level).then(next => {
+          if (!alive || next?.sampleRevision !== snapshot.sampleRevision) return
+          summaries.current.set(key, next)
+          if (summaries.current.size > 8)
+            summaries.current.delete(summaries.current.keys().next().value!)
+          setWaveform(next)
+        }).catch(() => { if (alive) setError('WAVEFORM OVERVIEW UNAVAILABLE') })
+      }
+    } else setWaveform(null)
     return () => { alive = false }
   }, [snapshot.selectedPad, snapshot.sampleRevision, frames, zoom])
 
   const visibleFrames = Math.max(1, frames / zoom)
   const visibleStart = (frames - visibleFrames) * view
+  const fadeInMarker = draft.reversed ? draft.endFrame - draft.fadeInFrames
+    : draft.startFrame + draft.fadeInFrames
+  const fadeOutMarker = draft.reversed ? draft.startFrame + draft.fadeOutFrames
+    : draft.endFrame - draft.fadeOutFrames
   const toPixel = (frame: number, width: number) => (frame - visibleStart) / visibleFrames * width
   const toFrame = (x: number, width: number) => Math.round(Math.max(0,
     Math.min(frames, visibleStart + x / width * visibleFrames)))
+
+  useEffect(() => {
+    const element = canvas.current
+    if (!element) return
+    const observer = new ResizeObserver(() => setCanvasWidth(element.clientWidth))
+    observer.observe(element)
+    setCanvasWidth(element.clientWidth)
+    return () => observer.disconnect()
+  }, [frames > 0])
 
   useEffect(() => {
     const element = canvas.current
@@ -105,20 +129,37 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
     }
     marker(draft.startFrame, '#f8bf73')
     marker(draft.endFrame, '#f8bf73')
-    marker(draft.startFrame + draft.fadeInFrames, '#9a78b0')
-    marker(draft.endFrame - draft.fadeOutFrames, '#9a78b0')
+    marker(fadeInMarker, '#9a78b0')
+    marker(fadeOutMarker, '#9a78b0')
+    const handle = (frame: number, y: number, color: string) => {
+      const x = toPixel(frame, width)
+      if (x < -7 || x > width + 7) return
+      context.fillStyle = color
+      context.fillRect(x - 5, y, 10, 10)
+    }
+    handle(draft.startFrame, 0, '#f8bf73')
+    handle(draft.endFrame, 0, '#f8bf73')
+    handle(fadeInMarker, height - 10, '#9a78b0')
+    handle(fadeOutMarker, height - 10, '#9a78b0')
     if (snapshot.playbackFrame >= 0) marker(snapshot.playbackFrame, '#e4efb6')
+    context.fillStyle = '#83998a'
+    context.font = '10px Consolas, monospace'
+    context.fillText('TRIM', 10, 34)
+    context.fillText('FADE', 10, height - 12)
     context.fillStyle = '#f7ca81'
     context.font = '11px Consolas, monospace'
     context.fillText(draft.reversed ? 'REVERSE' : 'FORWARD', 10, 17)
-  }, [waveform, frames, draft, zoom, view, snapshot.playbackFrame])
+  }, [waveform, frames, draft, zoom, view, canvasWidth, fadeInMarker,
+      fadeOutMarker, snapshot.playbackFrame])
 
   const moveMarker = (marker: Marker, frame: number) => setDraft(current => {
     const next = { ...current }
     if (marker === 'start') next.startFrame = Math.min(frame, current.endFrame - 1)
     if (marker === 'end') next.endFrame = Math.max(frame, current.startFrame + 1)
-    if (marker === 'fadeIn') next.fadeInFrames = Math.max(0, frame - current.startFrame)
-    if (marker === 'fadeOut') next.fadeOutFrames = Math.max(0, current.endFrame - frame)
+    if (marker === 'fadeIn') next.fadeInFrames = Math.max(0,
+      current.reversed ? current.endFrame - frame : frame - current.startFrame)
+    if (marker === 'fadeOut') next.fadeOutFrames = Math.max(0,
+      current.reversed ? frame - current.startFrame : current.endFrame - frame)
     const length = next.endFrame - next.startFrame
     next.fadeInFrames = Math.min(next.fadeInFrames, length)
     next.fadeOutFrames = Math.min(next.fadeOutFrames, length)
@@ -132,20 +173,56 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
     if (!frames) return
     const bounds = event.currentTarget.getBoundingClientRect()
     const x = event.clientX - bounds.left
-    const positions: [Marker, number][] = [
-      ['start', draft.startFrame], ['end', draft.endFrame],
-      ['fadeIn', draft.startFrame + draft.fadeInFrames],
-      ['fadeOut', draft.endFrame - draft.fadeOutFrames]
-    ]
+    const trimLane = event.clientY - bounds.top < bounds.height / 2
+    const positions: [Marker, number][] = trimLane
+      ? [['start', draft.startFrame], ['end', draft.endFrame]]
+      : [['fadeIn', fadeInMarker], ['fadeOut', fadeOutMarker]]
     positions.sort((left, right) => Math.abs(toPixel(left[1], bounds.width) - x)
       - Math.abs(toPixel(right[1], bounds.width) - x))
     dragging.current = positions[0][0]
     event.currentTarget.setPointerCapture(event.pointerId)
     moveMarker(dragging.current, positionFromPointer(event))
   }
+  const finishDrag = (event: PointerEvent<HTMLCanvasElement>) => {
+    dragging.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId)
+  }
 
   if (!frames) return <p className="wave-empty">LOAD A SAMPLE TO EDIT ITS WAVEFORM</p>
   const seconds = (frame: number) => (frame / rate).toFixed(4)
+  const commitCoarse = async () => {
+    if (!Number.isInteger(coarse) || coarse < -24 || coarse > 24) {
+      setCoarse(snapshot.coarseTune)
+      setError('COARSE TUNE MUST BE -24 TO +24 SEMITONES')
+      return
+    }
+    try {
+      if (!await setCoarseTune(snapshot.selectedPad, coarse)) throw new Error()
+      setError('')
+    } catch { setError('COARSE TUNE COULD NOT BE APPLIED') }
+  }
+  const commitFine = async () => {
+    if (!Number.isFinite(fine) || fine < -100 || fine > 100) {
+      setFine(snapshot.fineTune)
+      setError('FINE TUNE MUST BE -100 TO +100 CENTS')
+      return
+    }
+    try {
+      if (!await setFineTune(snapshot.selectedPad, fine)) throw new Error()
+      setError('')
+    } catch { setError('FINE TUNE COULD NOT BE APPLIED') }
+  }
+  const snapTune = async () => {
+    const snapped = Math.max(-24, Math.min(24, Math.round(coarse + fine / 100)))
+    const pad = snapshot.selectedPad
+    try {
+      const coarseOk = await setCoarseTune(pad, snapped)
+      const fineOk = await setFineTune(pad, 0)
+      if (coarseOk && fineOk) { setCoarse(snapped); setFine(0); setError('') }
+      else setError('TUNING CHANGE COULD NOT BE APPLIED')
+    } catch { setError('TUNING CHANGE COULD NOT BE APPLIED') }
+  }
   const valid = draft.startFrame >= 0 && draft.endFrame <= frames
     && draft.startFrame < draft.endFrame && draft.fadeInFrames >= 0 && draft.fadeOutFrames >= 0
     && draft.fadeInFrames <= draft.endFrame - draft.startFrame
@@ -154,7 +231,7 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
     <canvas ref={canvas} className="wave-canvas" aria-label="Sample waveform with trim and fade markers"
       onPointerDown={pointerDown}
       onPointerMove={event => { if (dragging.current) moveMarker(dragging.current, positionFromPointer(event)) }}
-      onPointerUp={event => { dragging.current = null; event.currentTarget.releasePointerCapture(event.pointerId) }} />
+      onPointerUp={finishDrag} onPointerCancel={finishDrag} />
     <div className="wave-readout"><span>START {seconds(draft.startFrame)} S</span><span>END {seconds(draft.endFrame)} S</span><span>{frames} SOURCE FRAMES</span></div>
     <div className="wave-controls">
       <label>START <input type="number" min="0" max={frames - 1} value={draft.startFrame}
@@ -176,13 +253,13 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
     <div className="wave-controls" aria-label="Pad tuning">
       <label>COARSE SEMITONES <input type="number" min="-24" max="24" step="1" value={coarse}
         onChange={event => setCoarse(Number(event.target.value))}
-        onBlur={() => { if (Number.isInteger(coarse) && coarse >= -24 && coarse <= 24) void setCoarseTune(snapshot.selectedPad, coarse) }}
+        onBlur={() => void commitCoarse()}
         onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} /></label>
       <label>FINE CENTS <input type="number" min="-100" max="100" step="0.1" value={fine}
         onChange={event => setFine(Number(event.target.value))}
-        onBlur={() => { if (Number.isFinite(fine) && fine >= -100 && fine <= 100) void setFineTune(snapshot.selectedPad, fine) }}
+        onBlur={() => void commitFine()}
         onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} /></label>
-      <button onClick={() => { setFine(0); void setFineTune(snapshot.selectedPad, 0) }}>SNAP TO SEMITONE</button>
+      <button onClick={() => void snapTune()}>SNAP TO SEMITONE</button>
     </div>
     <div className="wave-actions">
       <button disabled={!valid || saving} onClick={() => {
@@ -196,7 +273,7 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
       }}>APPLY EDIT</button>
       <button onClick={() => { setDraft(fromSnapshot(snapshot)); setError('') }}>REVERT DRAFT</button>
       <button onClick={() => setDraft({ startFrame: 0, endFrame: frames, fadeInFrames: 0,
-        fadeOutFrames: Math.min(frames - 1, Math.round(rate * 0.005)), reversed: false })}>FULL SAMPLE</button>
+        fadeOutFrames: Math.min(frames - 1, Math.max(1, Math.floor(rate * 0.005))), reversed: false })}>FULL SAMPLE</button>
     </div>
     {error && <p className="operation-error" role="alert">{error}</p>}
   </div>

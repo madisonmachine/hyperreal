@@ -426,6 +426,12 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
         else
             playing.step = targetStep;
         playing.position += playing.step;
+        if (playing.position >= regionFrames)
+        {
+            playing.sample = nullptr;
+            pointer.store (nullptr);
+            break;
+        }
         if (playing.releaseRemaining > 0 && --playing.releaseRemaining == 0)
         {
             playing.sample = nullptr;
