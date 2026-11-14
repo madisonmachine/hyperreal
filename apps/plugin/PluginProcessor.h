@@ -68,6 +68,7 @@ private:
     std::array<float, 7> clipboardSettings { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 4.0f, 1.0f };
     bool clipboardSettingsReady = false;
     std::atomic<int> selectedPad { 0 };
+    bool transportWasPlaying = false;
     juce::SmoothedValue<float> smoothedMasterGain;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HyperrealAudioProcessor)
 };

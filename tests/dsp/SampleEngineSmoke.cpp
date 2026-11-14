@@ -433,6 +433,22 @@ int main()
         return 36;
     }
 
+    settings = {};
+    settings[0].gated = true;
+    restored.prepare (44100.0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    restored.process (audio, midi, settings);
+    restored.requestTransportStop();
+    midi.clear();
+    restored.process (audio, midi, settings);
+    restored.process (audio, midi, settings);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 127), 0.0f))
+    {
+        std::cerr << "Transport-stop release left a gated voice playing\n";
+        return 37;
+    }
+
     std::cout << "SampleEngine multi-pad smoke passed\n";
     return 0;
 }

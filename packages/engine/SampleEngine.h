@@ -44,6 +44,7 @@ public:
     bool swapPads (int first, int second);
     bool clearPad (int pad);
     void requestAudition (int pad) noexcept;
+    void requestTransportStop() noexcept { transportStopRequested.store (true); }
     void requestAudition() noexcept { requestAudition (0); }
     juce::var getSnapshot (int selectedPad = 0) const;
     void writeSampleState (juce::OutputStream& output) const;
@@ -110,6 +111,7 @@ private:
     std::array<std::atomic<const Sample*>, maxVoices> tailPointers {};
     std::atomic<bool> callbackActive { false };
     std::array<std::atomic<unsigned int>, padCount> auditionCounters {};
+    std::atomic<bool> transportStopRequested { false };
 
     // The audio thread owns all voice state. Other threads only inspect voicePointers.
     std::array<Voice, maxVoices> voices {};

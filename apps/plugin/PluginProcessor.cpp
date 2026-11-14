@@ -41,6 +41,7 @@ HyperrealAudioProcessor::HyperrealAudioProcessor()
 void HyperrealAudioProcessor::prepareToPlay (double sampleRate, int)
 {
     engine.prepare (sampleRate);
+    transportWasPlaying = false;
     smoothedMasterGain.reset (sampleRate, 0.01);
     smoothedMasterGain.setCurrentAndTargetValue (parameters.getRawParameterValue ("master.gain.v1")->load());
 }
@@ -50,6 +51,14 @@ void HyperrealAudioProcessor::releaseResources() {}
 void HyperrealAudioProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
+    if (auto* hostPlayHead = getPlayHead())
+        if (const auto position = hostPlayHead->getPosition())
+        {
+            const auto playing = position->getIsPlaying();
+            if (transportWasPlaying && ! playing)
+                engine.requestTransportStop();
+            transportWasPlaying = playing;
+        }
     SampleEngine::PlaybackSettings playback {};
     for (int pad = 0; pad < padCount; ++pad)
     {

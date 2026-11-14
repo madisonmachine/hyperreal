@@ -50,6 +50,7 @@ SampleEngine::~SampleEngine()
 void SampleEngine::prepare (double hostSampleRate) noexcept
 {
     hostRate = hostSampleRate > 0.0 ? hostSampleRate : 44100.0;
+    transportStopRequested.store (false);
     for (int pad = 0; pad < padCount; ++pad)
     {
         auditionSeen[pad] = auditionCounters[pad].load();
@@ -348,6 +349,8 @@ void SampleEngine::process (juce::AudioBuffer<float>& output, const juce::MidiBu
 {
     callbackActive.store (true);
     output.clear();
+    if (transportStopRequested.exchange (false))
+        releaseAll();
 
     const auto anySolo = std::any_of (settings.begin(), settings.end(),
                                      [] (const auto& pad) { return pad.solo; });
