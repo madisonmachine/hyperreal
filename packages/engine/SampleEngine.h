@@ -37,6 +37,7 @@ public:
     void process (juce::AudioBuffer<float>& output, const juce::MidiBuffer& midi,
                   const PlaybackSettings& settings) noexcept;
     void requestLoad (int pad, juce::File file);
+    void requestLoadData (int pad, juce::String name, juce::MemoryBlock data);
     void requestLoad (juce::File file) { requestLoad (0, std::move (file)); }
     void cancelLoad (int pad);
     bool copyPad (int pad);
@@ -97,6 +98,8 @@ private:
     bool stopping = false;
     std::array<bool, padCount> pendingLoads {};
     std::array<juce::File, padCount> pendingFiles;
+    std::array<std::unique_ptr<juce::MemoryBlock>, padCount> pendingMemory;
+    std::array<juce::String, padCount> pendingNames;
     std::array<juce::uint64, padCount> loadGenerations {};
     int lastDequeuedPad = padCount - 1;
     std::array<juce::String, padCount> status;

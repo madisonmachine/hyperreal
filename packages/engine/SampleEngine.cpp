@@ -73,10 +73,30 @@ void SampleEngine::requestLoad (int pad, juce::File file)
     {
         std::lock_guard lock (controlMutex);
         pendingFiles[pad] = std::move (file);
+        pendingMemory[pad].reset();
+        pendingNames[pad] = pendingFiles[pad].getFileName();
         pendingLoads[pad] = true; // Latest request wins for this pad only.
         ++loadGenerations[pad];
         status[pad] = "loading";
         message[pad] = "Decoding sample on a worker thread.";
+    }
+    controlChanged.notify_one();
+}
+
+void SampleEngine::requestLoadData (int pad, juce::String name, juce::MemoryBlock data)
+{
+    if (pad < 0 || pad >= padCount || data.isEmpty() || data.getSize() > maxInputBytes
+        || ! juce::File (name).hasFileExtension (".wav;.aif;.aiff;.flac"))
+        return;
+    {
+        std::lock_guard lock (controlMutex);
+        pendingFiles[pad] = {};
+        pendingNames[pad] = juce::File (name).getFileName();
+        pendingMemory[pad] = std::make_unique<juce::MemoryBlock> (std::move (data));
+        pendingLoads[pad] = true;
+        ++loadGenerations[pad];
+        status[pad] = "loading";
+        message[pad] = "Decoding dropped sample on a worker thread.";
     }
     controlChanged.notify_one();
 }
@@ -87,6 +107,7 @@ void SampleEngine::cancelLoad (int pad)
         return;
     std::lock_guard lock (controlMutex);
     pendingLoads[pad] = false;
+    pendingMemory[pad].reset();
     ++loadGenerations[pad]; // Invalidates any decode already in flight.
     status[pad] = current[pad] != nullptr ? "ready" : "empty";
     message[pad] = "Sample load cancelled.";
@@ -132,6 +153,7 @@ bool SampleEngine::pastePad (int pad)
     }
     auto replacement = cloneSample (clipboard.get());
     pendingLoads[pad] = false;
+    pendingMemory[pad].reset();
     ++loadGenerations[pad];
     publishSample (pad, std::move (replacement));
     status[pad] = current[pad] != nullptr ? "ready" : "empty";
@@ -146,6 +168,8 @@ bool SampleEngine::swapPads (int first, int second)
         return false;
     std::lock_guard lock (controlMutex);
     pendingLoads[first] = pendingLoads[second] = false;
+    pendingMemory[first].reset();
+    pendingMemory[second].reset();
     ++loadGenerations[first];
     ++loadGenerations[second];
     std::swap (current[first], current[second]);
@@ -163,6 +187,7 @@ bool SampleEngine::clearPad (int pad)
         return false;
     std::lock_guard lock (controlMutex);
     pendingLoads[pad] = false;
+    pendingMemory[pad].reset();
     ++loadGenerations[pad];
     publishSample (pad, nullptr);
     status[pad] = "empty";
@@ -470,6 +495,8 @@ void SampleEngine::workerLoop()
     for (;;)
     {
         juce::File file;
+        std::unique_ptr<juce::MemoryBlock> memory;
+        juce::String sourceName;
         int pad = -1;
         juce::uint64 generation = 0;
         {
@@ -499,18 +526,26 @@ void SampleEngine::workerLoop()
                 continue;
             }
             file = pendingFiles[pad];
+            memory = std::move (pendingMemory[pad]);
+            sourceName = pendingNames[pad];
             generation = loadGenerations[pad];
             pendingLoads[pad] = false;
         }
 
         juce::String error;
         std::unique_ptr<Sample> decoded;
-        if (! file.existsAsFile() || file.getSize() > maxInputBytes
-            || ! file.hasFileExtension (".wav;.aif;.aiff;.flac"))
+        const auto validInput = memory != nullptr
+            ? ! memory->isEmpty() && memory->getSize() <= maxInputBytes
+            : file.existsAsFile() && file.getSize() <= maxInputBytes;
+        if (! validInput || ! juce::File (sourceName).hasFileExtension (".wav;.aif;.aiff;.flac"))
         {
             error = "Choose a WAV, AIFF or FLAC file under 128 MB.";
         }
-        else if (auto reader = std::unique_ptr<juce::AudioFormatReader> (formats.createReaderFor (file)))
+        else if (auto reader = std::unique_ptr<juce::AudioFormatReader> (
+                     memory != nullptr
+                         ? formats.createReaderFor (std::make_unique<juce::MemoryInputStream> (
+                               std::move (*memory)))
+                         : formats.createReaderFor (file)))
         {
             if (reader->numChannels < 1 || reader->numChannels > maxChannels
                 || ! std::isfinite (reader->sampleRate) || reader->sampleRate <= 0.0
@@ -528,7 +563,7 @@ void SampleEngine::workerLoop()
                 const auto frames = static_cast<int> (reader->lengthInSamples);
                 decoded->audio.setSize (static_cast<int> (reader->numChannels), frames);
                 decoded->sampleRate = reader->sampleRate;
-                decoded->name = file.getFileName();
+                decoded->name = sourceName;
                 if (! reader->read (&decoded->audio, 0, frames, 0, true, true))
                 {
                     decoded.reset();

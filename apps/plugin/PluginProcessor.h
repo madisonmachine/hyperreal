@@ -29,6 +29,10 @@ public:
     void setStateInformation (const void* data, int size) override;
 
     void requestSampleLoad (int pad, juce::File file) { engine.requestLoad (pad, std::move (file)); }
+    void requestSampleLoadData (int pad, juce::String name, juce::MemoryBlock data)
+    {
+        engine.requestLoadData (pad, std::move (name), std::move (data));
+    }
     void requestSampleLoad (juce::File file) { requestSampleLoad (0, std::move (file)); }
     void cancelSampleLoad (int pad) { engine.cancelLoad (pad); }
     void requestAudition (int pad) noexcept { engine.requestAudition (pad); }

@@ -34,8 +34,29 @@ const nativeAvailable = () => Boolean((window as Window & { __JUCE__?: unknown }
 export async function readSnapshot(): Promise<Snapshot> {
   return nativeAvailable() ? await getNativeFunction('getSnapshot')() as Snapshot : demo
 }
-export async function chooseSample(): Promise<void> {
-  if (nativeAvailable()) await getNativeFunction('chooseSample')()
+export async function chooseSample(pad: number): Promise<void> {
+  if (nativeAvailable()) await getNativeFunction('chooseSample')({ schemaVersion: 2, pad })
+}
+export async function importDroppedFile(pad: number, file: File, onProgress: (percent: number) => void): Promise<void> {
+  if (!nativeAvailable()) throw new Error('Native sample import is unavailable.')
+  const token = Number(await getNativeFunction('beginDrop')({ schemaVersion: 5, pad, name: file.name, size: file.size }))
+  if (!Number.isInteger(token) || token < 1) throw new Error('Choose a WAV, AIFF or FLAC file under 128 MB.')
+  try {
+    const chunkSize = 65536
+    for (let offset = 0; offset < file.size; offset += chunkSize) {
+      const bytes = new Uint8Array(await file.slice(offset, Math.min(offset + chunkSize, file.size)).arrayBuffer())
+      let binary = ''
+      for (const byte of bytes) binary += String.fromCharCode(byte)
+      const accepted = await getNativeFunction('appendDrop')({ schemaVersion: 5, token, chunk: btoa(binary) })
+      if (!accepted) throw new Error('The dropped file transfer was interrupted.')
+      onProgress(Math.round(100 * Math.min(offset + bytes.length, file.size) / file.size))
+    }
+    const finished = await getNativeFunction('finishDrop')({ schemaVersion: 5, token })
+    if (!finished) throw new Error('The dropped file transfer was incomplete.')
+  } catch (error) {
+    await getNativeFunction('cancelDrop')({ schemaVersion: 5, token }).catch(() => {})
+    throw error
+  }
 }
 export async function selectPad(pad: number): Promise<void> {
   if (nativeAvailable()) await getNativeFunction('selectPad')({ schemaVersion: 2, pad })

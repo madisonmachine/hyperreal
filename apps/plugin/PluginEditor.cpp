@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace
 {
@@ -64,10 +65,29 @@ HyperrealAudioProcessorEditor::HyperrealAudioProcessorEditor (HyperrealAudioProc
                    {
                        complete (processor.getSnapshot());
                    })
-                   .withNativeFunction ("chooseSample", [this] (const auto&, auto complete)
+                   .withNativeFunction ("chooseSample", [this] (const auto& arguments, auto complete)
                    {
-                       openSampleChooser();
-                       complete (true);
+                       const auto pad = arguments.size() == 1
+                                          ? padFromCommand (arguments[0]) : std::nullopt;
+                       if (pad.has_value())
+                           openSampleChooser (*pad);
+                       complete (pad.has_value());
+                   })
+                   .withNativeFunction ("beginDrop", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 ? beginDrop (arguments[0]) : 0);
+                   })
+                   .withNativeFunction ("appendDrop", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && appendDrop (arguments[0]));
+                   })
+                   .withNativeFunction ("finishDrop", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && finishDrop (arguments[0]));
+                   })
+                   .withNativeFunction ("cancelDrop", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && cancelDrop (arguments[0]));
                    })
                    .withNativeFunction ("setMasterGain", [this] (const auto& arguments, auto complete)
                    {
@@ -199,12 +219,79 @@ void HyperrealAudioProcessorEditor::filesDropped (const juce::StringArray& files
         });
 }
 
-void HyperrealAudioProcessorEditor::openSampleChooser()
+int HyperrealAudioProcessorEditor::beginDrop (const juce::var& command)
+{
+    const auto pad = padFromCommand (command, 5);
+    const auto rawName = command.getProperty ("name", {});
+    const auto rawSize = command.getProperty ("size", 0);
+    if (! pad.has_value() || ! rawName.isString()
+        || ! (rawSize.isInt() || rawSize.isInt64() || rawSize.isDouble()))
+        return 0;
+    const auto size = static_cast<double> (rawSize);
+    const auto name = juce::File (rawName.toString()).getFileName();
+    if (! std::isfinite (size) || std::trunc (size) != size
+        || size < 1.0 || size > 128.0 * 1024.0 * 1024.0
+        || name.isEmpty() || name.length() > 255
+        || ! juce::File (name).hasFileExtension (".wav;.aif;.aiff;.flac"))
+        return 0;
+    auto transfer = std::make_unique<DropTransfer>();
+    transfer->token = nextDropToken;
+    nextDropToken = nextDropToken == std::numeric_limits<int>::max() ? 1 : nextDropToken + 1;
+    transfer->pad = *pad;
+    transfer->name = name;
+    transfer->expected = static_cast<size_t> (size);
+    transfer->data.setSize (transfer->expected, false);
+    dropTransfer = std::move (transfer);
+    return dropTransfer->token;
+}
+
+bool HyperrealAudioProcessorEditor::appendDrop (const juce::var& command)
+{
+    if (! command.isObject() || dropTransfer == nullptr
+        || static_cast<int> (command.getProperty ("schemaVersion", 0)) != 5
+        || static_cast<int> (command.getProperty ("token", 0)) != dropTransfer->token)
+        return false;
+    const auto chunk = command.getProperty ("chunk", {});
+    if (! chunk.isString() || chunk.toString().length() > 87384)
+        return false;
+    juce::MemoryOutputStream decoded;
+    if (! juce::Base64::convertFromBase64 (decoded, chunk.toString())
+        || decoded.getDataSize() < 1 || decoded.getDataSize() > 65536
+        || decoded.getDataSize() > dropTransfer->expected - dropTransfer->received)
+        return false;
+    std::memcpy (static_cast<char*> (dropTransfer->data.getData()) + dropTransfer->received,
+                 decoded.getData(), decoded.getDataSize());
+    dropTransfer->received += decoded.getDataSize();
+    return true;
+}
+
+bool HyperrealAudioProcessorEditor::finishDrop (const juce::var& command)
+{
+    if (! command.isObject() || dropTransfer == nullptr
+        || static_cast<int> (command.getProperty ("schemaVersion", 0)) != 5
+        || static_cast<int> (command.getProperty ("token", 0)) != dropTransfer->token
+        || dropTransfer->received != dropTransfer->expected)
+        return false;
+    auto transfer = std::move (dropTransfer);
+    processor.requestSampleLoadData (transfer->pad, transfer->name, std::move (transfer->data));
+    return true;
+}
+
+bool HyperrealAudioProcessorEditor::cancelDrop (const juce::var& command)
+{
+    if (! command.isObject() || dropTransfer == nullptr
+        || static_cast<int> (command.getProperty ("schemaVersion", 0)) != 5
+        || static_cast<int> (command.getProperty ("token", 0)) != dropTransfer->token)
+        return false;
+    dropTransfer.reset();
+    return true;
+}
+
+void HyperrealAudioProcessorEditor::openSampleChooser (int targetPad)
 {
     if (chooserOpen)
         return;
     chooserOpen = true;
-    const auto targetPad = processor.getSelectedPad();
     chooser = std::make_unique<juce::FileChooser> (
         "Load a sample", juce::File {}, "*.wav;*.aif;*.aiff;*.flac");
 

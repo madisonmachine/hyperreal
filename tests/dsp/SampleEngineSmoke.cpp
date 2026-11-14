@@ -63,6 +63,9 @@ int main()
     writeWav (first, 6553);
     writeWav (second, 13107);
     writeWav (replacement, 19660);
+    juce::MemoryBlock droppedBytes;
+    if (! first.loadFileAsData (droppedBytes))
+        return 1;
 
     SampleEngine engine;
     engine.prepare (44100.0);
@@ -447,6 +450,32 @@ int main()
     {
         std::cerr << "Transport-stop release left a gated voice playing\n";
         return 37;
+    }
+
+    restored.requestLoadData (3, "dragged.wav", std::move (droppedBytes));
+    if (! waitForReady (restored, 3)
+        || restored.getSnapshot (3).getProperty ("sampleName", {}).toString() != "dragged.wav")
+    {
+        std::cerr << "Memory-backed dropped sample import failed\n";
+        return 38;
+    }
+    restored.prepare (44100.0);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 39, static_cast<juce::uint8> (127)), 0);
+    restored.process (audio, midi);
+    if (! near (audio.getSample (0, 0), 0.2f))
+    {
+        std::cerr << "Memory-backed dropped sample did not play\n";
+        return 39;
+    }
+    juce::MemoryBlock invalidDrop;
+    invalidDrop.append ("bad", 3);
+    restored.requestLoadData (3, "invalid.wav", std::move (invalidDrop));
+    if (! waitForReady (restored, 3)
+        || restored.getSnapshot (3).getProperty ("sampleName", {}).toString() != "dragged.wav")
+    {
+        std::cerr << "Invalid dropped sample replaced the playable pad\n";
+        return 40;
     }
 
     std::cout << "SampleEngine multi-pad smoke passed\n";
