@@ -1,6 +1,6 @@
 ﻿import { getNativeFunction } from '@juce-framework/webview'
 
-export type PadSnapshot = { index: number; midiNote: number; status: 'empty'|'loading'|'ready'|'error'; sampleName: string }
+export type PadSnapshot = { index: number; midiNote: number; status: 'empty'|'loading'|'ready'|'error'; sampleName: string; muted: boolean; solo: boolean }
 export type Snapshot = {
   schemaVersion: number
   selectedPad: number
@@ -14,15 +14,17 @@ export type Snapshot = {
   padLevel: number
   padMode: number
   chokeGroup: number
+  muted: boolean
+  solo: boolean
 }
 const demo: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
   pads: Array.from({ length: 16 }, (_, index) => ({
-    index, midiNote: index + 36, status: 'empty', sampleName: ''
+    index, midiNote: index + 36, status: 'empty', sampleName: '', muted: false, solo: false
   })),
   sampleName: '', status: 'empty', message: 'Open the plugin to load a sample.',
   durationSeconds: 0, sampleRate: 0, masterGain: 1,
-  padLevel: 1, padMode: 0, chokeGroup: 0
+  padLevel: 1, padMode: 0, chokeGroup: 0, muted: false, solo: false
 }
 const nativeAvailable = () => Boolean((window as Window & { __JUCE__?: unknown }).__JUCE__)
 export async function readSnapshot(): Promise<Snapshot> {
@@ -48,4 +50,10 @@ export async function setPadMode(pad: number, value: number): Promise<void> {
 }
 export async function setChokeGroup(pad: number, value: number): Promise<void> {
   if (nativeAvailable()) await getNativeFunction('setChokeGroup')({ schemaVersion: 3, pad, value })
+}
+export async function setPadMute(pad: number, value: boolean): Promise<void> {
+  if (nativeAvailable()) await getNativeFunction('setPadMute')({ schemaVersion: 3, pad, value: Number(value) })
+}
+export async function setPadSolo(pad: number, value: boolean): Promise<void> {
+  if (nativeAvailable()) await getNativeFunction('setPadSolo')({ schemaVersion: 3, pad, value: Number(value) })
 }

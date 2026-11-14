@@ -5,9 +5,10 @@
 
 namespace
 {
-constexpr int stateSchemaVersion = 4;
+constexpr int stateSchemaVersion = 5;
 constexpr int padCount = 16;
-constexpr char stateMagic[] = { 'H', 'R', 'P', '4' };
+constexpr char stateMagic[] = { 'H', 'R', 'P', '5' };
+constexpr char phase4Magic[] = { 'H', 'R', 'P', '4' };
 constexpr char phase3Magic[] = { 'H', 'R', 'P', '3' };
 constexpr char phase2Magic[] = { 'H', 'R', 'P', '2' };
 }
@@ -25,6 +26,10 @@ HyperrealAudioProcessor::HyperrealAudioProcessor()
             juce::String::formatted ("pad.%02d.mode.v1", number));
         padChokeParameters[pad] = parameters.getRawParameterValue (
             juce::String::formatted ("pad.%02d.choke.v1", number));
+        padMuteParameters[pad] = parameters.getRawParameterValue (
+            juce::String::formatted ("pad.%02d.mute.v1", number));
+        padSoloParameters[pad] = parameters.getRawParameterValue (
+            juce::String::formatted ("pad.%02d.solo.v1", number));
     }
 }
 
@@ -46,6 +51,8 @@ void HyperrealAudioProcessor::processBlock (juce::AudioBuffer<float>& audio, juc
         playback[pad].level = padLevelParameters[pad]->load();
         playback[pad].gated = padModeParameters[pad]->load() >= 0.5f;
         playback[pad].chokeGroup = static_cast<int> (padChokeParameters[pad]->load());
+        playback[pad].muted = padMuteParameters[pad]->load() >= 0.5f;
+        playback[pad].solo = padSoloParameters[pad]->load() >= 0.5f;
     }
     engine.process (audio, midi, playback);
     smoothedMasterGain.setTargetValue (parameters.getRawParameterValue ("master.gain.v1")->load());
@@ -73,6 +80,16 @@ juce::var HyperrealAudioProcessor::getSnapshot() const
     snapshot.getDynamicObject()->setProperty ("padLevel", padLevelParameters[pad]->load());
     snapshot.getDynamicObject()->setProperty ("padMode", static_cast<int> (padModeParameters[pad]->load()));
     snapshot.getDynamicObject()->setProperty ("chokeGroup", static_cast<int> (padChokeParameters[pad]->load()));
+    snapshot.getDynamicObject()->setProperty ("muted", padMuteParameters[pad]->load() >= 0.5f);
+    snapshot.getDynamicObject()->setProperty ("solo", padSoloParameters[pad]->load() >= 0.5f);
+    auto pads = snapshot.getProperty ("pads", {});
+    if (auto* items = pads.getArray())
+        for (int index = 0; index < std::min (padCount, items->size()); ++index)
+            if (auto* item = items->getReference (index).getDynamicObject())
+            {
+                item->setProperty ("muted", padMuteParameters[index]->load() >= 0.5f);
+                item->setProperty ("solo", padSoloParameters[index]->load() >= 0.5f);
+            }
     return snapshot;
 }
 
@@ -113,6 +130,14 @@ bool HyperrealAudioProcessor::setPadMode (const juce::var& command)
 bool HyperrealAudioProcessor::setPadChokeGroup (const juce::var& command)
 {
     return setPadDiscreteParameter (command, "choke", 4);
+}
+bool HyperrealAudioProcessor::setPadMute (const juce::var& command)
+{
+    return setPadDiscreteParameter (command, "mute", 1);
+}
+bool HyperrealAudioProcessor::setPadSolo (const juce::var& command)
+{
+    return setPadDiscreteParameter (command, "solo", 1);
 }
 bool HyperrealAudioProcessor::setPadDiscreteParameter (const juce::var& command,
                                                         const char* name, int maximum)
@@ -194,13 +219,15 @@ void HyperrealAudioProcessor::setStateInformation (const void* data, int size)
         return;
 
     const auto version = input.readInt();
-    const auto phase4 = std::memcmp (magic, stateMagic, sizeof (magic)) == 0
+    const auto phase5 = std::memcmp (magic, stateMagic, sizeof (magic)) == 0
                         && version == stateSchemaVersion;
+    const auto phase4 = std::memcmp (magic, phase4Magic, sizeof (magic)) == 0
+                        && version == 4;
     const auto phase3 = std::memcmp (magic, phase3Magic, sizeof (magic)) == 0
                         && version == 3;
     const auto phase2 = std::memcmp (magic, phase2Magic, sizeof (magic)) == 0
                         && version == 2;
-    if (! phase4 && ! phase3 && ! phase2)
+    if (! phase5 && ! phase4 && ! phase3 && ! phase2)
         return;
 
     const auto parameterSize = input.readInt();
@@ -215,7 +242,7 @@ void HyperrealAudioProcessor::setStateInformation (const void* data, int size)
     const auto snapshot = juce::ValueTree::readFromData (parameterBytes.getData(), parameterBytes.getSize());
     if (! snapshot.hasType ("HYPERREAL_STATE")
         || static_cast<int> (snapshot.getProperty ("schema_version", 0)) != version
-        || ! (phase4 || phase3 ? engine.restoreSampleState (input)
+        || ! ((phase5 || phase4 || phase3) ? engine.restoreSampleState (input)
                                : engine.restorePhase2SampleState (input)))
         return;
 
@@ -254,6 +281,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout HyperrealAudioProcessor::cre
         layout.push_back (std::make_unique<juce::AudioParameterInt> (
             juce::ParameterID { chokeId, 1 },
             juce::String::formatted ("Pad %02d choke group", pad), 0, 4, 0));
+    }
+
+    for (int pad = 1; pad <= padCount; ++pad)
+    {
+        const auto muteId = juce::String::formatted ("pad.%02d.mute.v1", pad);
+        const auto soloId = juce::String::formatted ("pad.%02d.solo.v1", pad);
+        layout.push_back (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { muteId, 1 },
+            juce::String::formatted ("Pad %02d mute", pad), false));
+        layout.push_back (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { soloId, 1 },
+            juce::String::formatted ("Pad %02d solo", pad), false));
     }
 
     return { layout.begin(), layout.end() };

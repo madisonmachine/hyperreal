@@ -22,6 +22,8 @@ public:
         bool gated = false;
         int chokeGroup = 0;
         float level = 1.0f;
+        bool muted = false;
+        bool solo = false;
     };
     using PlaybackSettings = std::array<PadPlaybackSettings, padCount>;
 
@@ -98,6 +100,7 @@ private:
     // The audio thread owns all voice state. Other threads only inspect voicePointers.
     std::array<Voice, maxVoices> voices {};
     std::array<unsigned int, padCount> auditionSeen {};
+    std::array<bool, padCount> audiblePads {};
     juce::uint64 nextSequence = 1;
     double hostRate = 44100.0;
 };

@@ -245,6 +245,53 @@ int main()
         return 17;
     }
 
+    settings[0].level = 1.0f;
+    settings[0].muted = true;
+    restored.prepare (44100.0);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 37, static_cast<juce::uint8> (127)), 0);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 0), 0.4f))
+    {
+        std::cerr << "Muted pad still triggered\n";
+        return 18;
+    }
+
+    settings[0].muted = false;
+    settings[1].solo = true;
+    restored.prepare (44100.0);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 0), 0.4f))
+    {
+        std::cerr << "Solo did not suppress non-solo pad\n";
+        return 19;
+    }
+
+    settings[0].solo = true;
+    restored.prepare (44100.0);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 0), 1.0f))
+    {
+        std::cerr << "Multiple solo pads did not play together\n";
+        return 20;
+    }
+
+    settings[0].muted = true;
+    midi.clear();
+    restored.process (audio, midi, settings);
+    if (audio.getSample (0, 0) < 0.9f || audio.getSample (0, 127) >= 0.8f)
+    {
+        std::cerr << "Muting an active voice did not fade it\n";
+        return 21;
+    }
+    restored.process (audio, midi, settings);
+    if (audio.getSample (0, 127) > 0.5f)
+    {
+        std::cerr << "Muted voice continued after fade\n";
+        return 22;
+    }
+
     std::cout << "SampleEngine multi-pad smoke passed\n";
     return 0;
 }

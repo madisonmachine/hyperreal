@@ -39,6 +39,8 @@ public:
     bool setMasterGain (const juce::var& command);
     bool setPadMode (const juce::var& command);
     bool setPadChokeGroup (const juce::var& command);
+    bool setPadMute (const juce::var& command);
+    bool setPadSolo (const juce::var& command);
 
 private:
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
@@ -50,6 +52,8 @@ private:
     std::array<std::atomic<float>*, SampleEngine::padCount> padLevelParameters {};
     std::array<std::atomic<float>*, SampleEngine::padCount> padModeParameters {};
     std::array<std::atomic<float>*, SampleEngine::padCount> padChokeParameters {};
+    std::array<std::atomic<float>*, SampleEngine::padCount> padMuteParameters {};
+    std::array<std::atomic<float>*, SampleEngine::padCount> padSoloParameters {};
     std::atomic<int> selectedPad { 0 };
     juce::SmoothedValue<float> smoothedMasterGain;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HyperrealAudioProcessor)

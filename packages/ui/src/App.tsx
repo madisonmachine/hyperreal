@@ -1,13 +1,14 @@
 ﻿import { useEffect, useState } from 'react'
-import { audition, cancelLoad, chooseSample, readSnapshot, selectPad, setChokeGroup, setMasterGain, setPadMode, type Snapshot } from './bridge'
+import { audition, cancelLoad, chooseSample, readSnapshot, selectPad, setChokeGroup, setMasterGain, setPadMode, setPadMute, setPadSolo, type Snapshot } from './bridge'
 
 const initial: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
   pads: Array.from({ length: 16 }, (_, index) => ({
-    index, midiNote: index + 36, status: 'empty', sampleName: ''
+    index, midiNote: index + 36, status: 'empty', sampleName: '', muted: false, solo: false
   })),
   sampleName: '', status: 'empty', message: '', durationSeconds: 0,
-  sampleRate: 0, masterGain: 1, padLevel: 1, padMode: 0, chokeGroup: 0
+  sampleRate: 0, masterGain: 1, padLevel: 1, padMode: 0, chokeGroup: 0,
+  muted: false, solo: false
 }
 
 export default function App() {
@@ -44,16 +45,18 @@ export default function App() {
     <section className="pad-settings" aria-label={'Pad '+selectedLabel+' playback settings'}>
       <label>MODE <select value={snapshot.padMode} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, padMode:value })); void setPadMode(selected, value) }}><option value={0}>ONE-SHOT</option><option value={1}>GATE</option></select></label>
       <label>CHOKE GROUP <select value={snapshot.chokeGroup} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, chokeGroup:value })); void setChokeGroup(selected, value) }}>{[0,1,2,3,4].map(group => <option key={group} value={group}>{group === 0 ? 'OFF' : group}</option>)}</select></label>
+      <label><input type="checkbox" checked={snapshot.muted} onChange={event => { const value = event.target.checked; setSnapshot(current => ({ ...current, muted:value })); void setPadMute(selected, value) }} /> MUTE</label>
+      <label><input type="checkbox" checked={snapshot.solo} onChange={event => { const value = event.target.checked; setSnapshot(current => ({ ...current, solo:value })); void setPadSolo(selected, value) }} /> SOLO</label>
       <span>PAD LEVEL {Math.round(snapshot.padLevel * 100)}%</span>
     </section>
     <section className="pads" aria-label="Sixteen drum pads">{snapshot.pads.map((pad) =>
       <button key={pad.midiNote}
-        className={'pad '+(pad.index === selected ? 'selected ' : '')+(pad.status === 'ready' ? 'loaded' : '')}
+        className={'pad '+(pad.index === selected ? 'selected ' : '')+(pad.status === 'ready' ? 'loaded ' : '')+(pad.muted ? 'muted ' : '')+(pad.solo ? 'solo' : '')}
         onClick={() => void selectPad(pad.index)}
         onDoubleClick={() => { if (pad.status === 'ready') void audition(pad.index) }}
-        aria-label={'Select pad '+(pad.index+1)+', MIDI note '+pad.midiNote+', '+pad.status}
+        aria-label={'Select pad '+(pad.index+1)+', MIDI note '+pad.midiNote+', '+pad.status+(pad.muted ? ', muted' : '')+(pad.solo ? ', solo' : '')}
         aria-pressed={pad.index === selected}>
-        <span>{String(pad.index+1).padStart(2,'0')} · {pad.status.toUpperCase()}</span>
+        <span>{String(pad.index+1).padStart(2,'0')} · {pad.muted ? 'MUTED' : pad.solo ? 'SOLO' : pad.status.toUpperCase()}</span>
         <b>{pad.sampleName || 'UNASSIGNED'}</b>
         <span>MIDI {pad.midiNote}</span>
       </button>)}</section>

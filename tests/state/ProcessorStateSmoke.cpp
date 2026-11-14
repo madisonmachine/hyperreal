@@ -81,7 +81,11 @@ int main()
     const auto chokeSet = original.setPadChokeGroup (setting (0, 2));
     const auto invalidPadAccepted = original.setPadMode (setting (16, 1));
     const auto invalidChokeAccepted = original.setPadChokeGroup (setting (0, 5));
-    if (! modeSet || ! chokeSet || invalidPadAccepted || invalidChokeAccepted)
+    const auto muteSet = original.setPadMute (setting (0, 1));
+    const auto soloSet = original.setPadSolo (setting (1, 1));
+    const auto invalidMuteAccepted = original.setPadMute (setting (0, 2));
+    if (! modeSet || ! chokeSet || ! muteSet || ! soloSet
+        || invalidPadAccepted || invalidChokeAccepted || invalidMuteAccepted)
     {
         std::cerr << "Pad setting command validation failed: " << modeSet << ' '
                   << chokeSet << ' ' << invalidPadAccepted << ' ' << invalidChokeAccepted << "\n";
@@ -101,31 +105,53 @@ int main()
     const auto parameterSize = stateReader.readInt();
     juce::MemoryBlock parameterBytes (static_cast<size_t> (parameterSize));
     stateReader.read (parameterBytes.getData(), parameterSize);
+    auto phase4Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
+                                                           parameterBytes.getSize());
+    phase4Parameters.setProperty ("schema_version", 4, nullptr);
+    for (int child = phase4Parameters.getNumChildren() - 1; child >= 0; --child)
+    {
+        const auto id = phase4Parameters.getChild (child).getProperty ("id").toString();
+        if (id.contains (".mute.") || id.contains (".solo."))
+            phase4Parameters.removeChild (child, nullptr);
+    }
+    auto makePreviousState = [&stateReader] (const juce::ValueTree& tree,
+                                              const char* magic, int version)
+    {
+        juce::MemoryBlock parameterData;
+        juce::MemoryOutputStream parameterOutput (parameterData, false);
+        tree.writeToStream (parameterOutput);
+        juce::MemoryBlock previous;
+        juce::MemoryOutputStream output (previous, false);
+        output.write (magic, 4);
+        output.writeInt (version);
+        output.writeInt (static_cast<int> (parameterData.getSize()));
+        output.write (parameterData.getData(), parameterData.getSize());
+        output.write (static_cast<const char*> (stateReader.getData()) + stateReader.getPosition(),
+                      static_cast<size_t> (stateReader.getNumBytesRemaining()));
+        return previous;
+    };
+    const auto phase4State = makePreviousState (phase4Parameters, "HRP4", 4);
     auto phase3Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
                                                            parameterBytes.getSize());
     phase3Parameters.setProperty ("schema_version", 3, nullptr);
     for (int child = phase3Parameters.getNumChildren() - 1; child >= 0; --child)
     {
         const auto id = phase3Parameters.getChild (child).getProperty ("id").toString();
-        if (id.contains (".mode.") || id.contains (".choke."))
+        if (id.contains (".mode.") || id.contains (".choke.")
+            || id.contains (".mute.") || id.contains (".solo."))
             phase3Parameters.removeChild (child, nullptr);
     }
-    juce::MemoryBlock phase3State;
-    {
-        juce::MemoryBlock phase3ParametersBytes;
-        juce::MemoryOutputStream parameterOutput (phase3ParametersBytes, false);
-        phase3Parameters.writeToStream (parameterOutput);
-        juce::MemoryOutputStream output (phase3State, false);
-        output.write ("HRP3", 4);
-        output.writeInt (3);
-        output.writeInt (static_cast<int> (phase3ParametersBytes.getSize()));
-        output.write (phase3ParametersBytes.getData(), phase3ParametersBytes.getSize());
-        output.write (static_cast<const char*> (stateReader.getData()) + stateReader.getPosition(),
-                      static_cast<size_t> (stateReader.getNumBytesRemaining()));
-    }
+    const auto phase3State = makePreviousState (phase3Parameters, "HRP3", 3);
     auto phase2Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
                                                            parameterBytes.getSize());
     phase2Parameters.setProperty ("schema_version", 2, nullptr);
+    for (int child = phase2Parameters.getNumChildren() - 1; child >= 0; --child)
+    {
+        const auto id = phase2Parameters.getChild (child).getProperty ("id").toString();
+        if (id.contains (".mode.") || id.contains (".choke.")
+            || id.contains (".mute.") || id.contains (".solo."))
+            phase2Parameters.removeChild (child, nullptr);
+    }
     juce::MemoryBlock phase2ParameterBytes;
     {
         juce::MemoryOutputStream parametersOutput (phase2ParameterBytes, false);
@@ -155,11 +181,15 @@ int main()
     if (snapshot.getProperty ("status", {}).toString() != "ready"
         || std::abs (static_cast<double> (snapshot.getProperty ("masterGain", 0.0)) - 0.5) > 0.001
         || static_cast<int> (snapshot.getProperty ("padMode", -1)) != 1
-        || static_cast<int> (snapshot.getProperty ("chokeGroup", -1)) != 2)
+        || static_cast<int> (snapshot.getProperty ("chokeGroup", -1)) != 2
+        || ! static_cast<bool> (snapshot.getProperty ("muted", false))
+        || ! restored.selectPad (1)
+        || ! static_cast<bool> (restored.getSnapshot().getProperty ("solo", false)))
     {
         std::cerr << "Full project state did not restore\n";
         return 1;
     }
+    restored.selectPad (0);
     restored.setStateInformation (state.getData(), static_cast<int> (state.getSize()) - 1);
     if (restored.getSnapshot().getProperty ("status", {}).toString() != "ready"
         || std::abs (static_cast<double> (
@@ -172,6 +202,8 @@ int main()
     juce::AudioBuffer<float> audio (2, 128);
     juce::MidiBuffer midi;
     midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    restored.setPadMute (setting (0, 0));
+    restored.setPadSolo (setting (1, 0));
     restored.processBlock (audio, midi);
     const auto magnitude = audio.getMagnitude (0, 0, 128);
     if (magnitude < 0.15f || magnitude > 0.3f)
@@ -204,6 +236,16 @@ int main()
         || static_cast<int> (phase3Migrated.getSnapshot().getProperty ("chokeGroup", -1)) != 0)
     {
         std::cerr << "Phase 3 project migration failed\n";
+        return 1;
+    }
+    HyperrealAudioProcessor phase4Migrated;
+    phase4Migrated.setStateInformation (phase4State.getData(), static_cast<int> (phase4State.getSize()));
+    if (phase4Migrated.getSnapshot().getProperty ("status", {}).toString() != "ready"
+        || static_cast<int> (phase4Migrated.getSnapshot().getProperty ("padMode", -1)) != 1
+        || static_cast<int> (phase4Migrated.getSnapshot().getProperty ("chokeGroup", -1)) != 2
+        || static_cast<bool> (phase4Migrated.getSnapshot().getProperty ("muted", true)))
+    {
+        std::cerr << "Phase 4 project migration failed\n";
         return 1;
     }
 

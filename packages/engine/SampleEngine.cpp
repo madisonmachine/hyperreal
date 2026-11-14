@@ -49,7 +49,10 @@ void SampleEngine::prepare (double hostSampleRate) noexcept
 {
     hostRate = hostSampleRate > 0.0 ? hostSampleRate : 44100.0;
     for (int pad = 0; pad < padCount; ++pad)
+    {
         auditionSeen[pad] = auditionCounters[pad].load();
+        audiblePads[pad] = true;
+    }
     for (int voiceIndex = 0; voiceIndex < maxVoices; ++voiceIndex)
     {
         voices[voiceIndex] = {};
@@ -120,6 +123,8 @@ void SampleEngine::releaseAll() noexcept
 void SampleEngine::startVoice (int pad, float velocity, bool audition,
                                const PlaybackSettings& settings) noexcept
 {
+    if (! audiblePads[pad])
+        return;
     const auto* sample = activeSamples[pad].load();
     if (sample == nullptr)
         return;
@@ -224,6 +229,18 @@ void SampleEngine::process (juce::AudioBuffer<float>& output, const juce::MidiBu
 {
     callbackActive.store (true);
     output.clear();
+
+    const auto anySolo = std::any_of (settings.begin(), settings.end(),
+                                     [] (const auto& pad) { return pad.solo; });
+    for (int pad = 0; pad < padCount; ++pad)
+    {
+        const auto audible = ! settings[pad].muted && (! anySolo || settings[pad].solo);
+        if (! audible && audiblePads[pad])
+            for (auto& playing : voices)
+                if (playing.sample != nullptr && playing.pad == pad)
+                    beginRelease (playing);
+        audiblePads[pad] = audible;
+    }
 
     for (int pad = 0; pad < padCount; ++pad)
     {

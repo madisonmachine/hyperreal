@@ -73,6 +73,14 @@ HyperrealAudioProcessorEditor::HyperrealAudioProcessorEditor (HyperrealAudioProc
                    {
                        complete (arguments.size() == 1 && processor.setPadChokeGroup (arguments[0]));
                    })
+                   .withNativeFunction ("setPadMute", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && processor.setPadMute (arguments[0]));
+                   })
+                   .withNativeFunction ("setPadSolo", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && processor.setPadSolo (arguments[0]));
+                   })
                    .withNativeFunction ("selectPad", [this] (const auto& arguments, auto complete)
                    {
                        const auto pad = arguments.size() == 1
