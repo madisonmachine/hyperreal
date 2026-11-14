@@ -88,6 +88,14 @@ HyperrealAudioProcessorEditor::HyperrealAudioProcessorEditor (HyperrealAudioProc
                    {
                        complete (arguments.size() == 1 && processor.setPadSolo (arguments[0]));
                    })
+                   .withNativeFunction ("setVoiceLimit", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && processor.setPadVoiceLimit (arguments[0]));
+                   })
+                   .withNativeFunction ("setVelocityCurve", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && processor.setPadVelocityCurve (arguments[0]));
+                   })
                    .withNativeFunction ("selectPad", [this] (const auto& arguments, auto complete)
                    {
                        const auto pad = arguments.size() == 1
@@ -150,6 +158,18 @@ HyperrealAudioProcessorEditor::HyperrealAudioProcessorEditor (HyperrealAudioProc
 void HyperrealAudioProcessorEditor::resized()
 {
     browser.setBounds (getLocalBounds());
+}
+
+bool HyperrealAudioProcessorEditor::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    return files.size() == 1
+           && juce::File (files[0]).hasFileExtension (".wav;.aif;.aiff;.flac");
+}
+
+void HyperrealAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, int)
+{
+    if (isInterestedInFileDrag (files))
+        processor.requestSampleLoad (processor.getSelectedPad(), juce::File (files[0]));
 }
 
 void HyperrealAudioProcessorEditor::openSampleChooser()

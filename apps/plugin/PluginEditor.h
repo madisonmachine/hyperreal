@@ -3,12 +3,15 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "PluginProcessor.h"
 
-class HyperrealAudioProcessorEditor final : public juce::AudioProcessorEditor
+class HyperrealAudioProcessorEditor final : public juce::AudioProcessorEditor,
+                                             public juce::FileDragAndDropTarget
 {
 public:
     explicit HyperrealAudioProcessorEditor (HyperrealAudioProcessor& processor);
     static bool isSupported();
     void resized() override;
+    bool isInterestedInFileDrag (const juce::StringArray& files) override;
+    void filesDropped (const juce::StringArray& files, int x, int y) override;
 
 private:
     static std::optional<juce::WebBrowserComponent::Resource> getResource (const juce::String& path);

@@ -24,6 +24,8 @@ public:
         float level = 1.0f;
         bool muted = false;
         bool solo = false;
+        int voiceLimit = 4;
+        int velocityCurve = 1;
     };
     using PlaybackSettings = std::array<PadPlaybackSettings, padCount>;
 
@@ -61,6 +63,7 @@ private:
         double position = 0.0;
         float gain = 0.0f;
         int pad = 0;
+        int midiChannel = 0;
         juce::uint64 sequence = 0;
         bool gated = false;
         bool noteHeld = false;
@@ -77,10 +80,13 @@ private:
     void publishSample (int pad, std::unique_ptr<Sample> next);
     void reapRetired();
     void startVoice (int pad, float velocity, bool audition,
-                     const PlaybackSettings& settings) noexcept;
-    void noteOff (int pad) noexcept;
-    void releaseAll() noexcept;
+                     int midiChannel, const PlaybackSettings& settings) noexcept;
+    void noteOff (int pad, int midiChannel) noexcept;
+    void releaseAll (int midiChannel = 0) noexcept;
     void beginRelease (Voice& voice) noexcept;
+    void renderVoice (Voice& voice, std::atomic<const Sample*>& pointer,
+                      juce::AudioBuffer<float>& output, int begin, int end,
+                      const PlaybackSettings& settings) noexcept;
     void renderRange (juce::AudioBuffer<float>& output, int begin, int end,
                       const PlaybackSettings& settings) noexcept;
 
@@ -101,11 +107,13 @@ private:
 
     std::array<std::atomic<const Sample*>, padCount> activeSamples {};
     std::array<std::atomic<const Sample*>, maxVoices> voicePointers {};
+    std::array<std::atomic<const Sample*>, maxVoices> tailPointers {};
     std::atomic<bool> callbackActive { false };
     std::array<std::atomic<unsigned int>, padCount> auditionCounters {};
 
     // The audio thread owns all voice state. Other threads only inspect voicePointers.
     std::array<Voice, maxVoices> voices {};
+    std::array<Voice, maxVoices> fadeTails {};
     std::array<unsigned int, padCount> auditionSeen {};
     std::array<bool, padCount> audiblePads {};
     juce::uint64 nextSequence = 1;

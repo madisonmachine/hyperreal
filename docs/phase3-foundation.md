@@ -14,13 +14,17 @@ Status: in progress, 14 November 2026. This branch is based on the Phase 2 draft
 
 - Pad level now controls rendered audio. Each pad has stable host parameters for one-shot/gate mode and choke group 0 to 4, appended after the original parameter IDs. The editor shows mode and choke controls for the selected pad.
 - Gate note-off releases the oldest held voice on that pad over 5 ms; one-shot notes ignore note-off. Zero-velocity note-on is treated as note-off. Choke triggers and MIDI all-notes-off/all-sound-off fade voices over 5 ms. Audition remains one-shot.
-- Host state is now HRP4. HRP3 and HRP2 remain readable. The engine and processor smoke tests cover gate release, one-shot note-off, choke fade, all-notes-off, command validation, current-state recall and older-state migration.
+- This slice introduced HRP4 state and kept HRP3 and HRP2 readable. The engine and processor smoke tests covered gate release, one-shot note-off, choke fade, all-notes-off, command validation, current-state recall and older-state migration.
 
 ## Checks completed
 
 Mute and multi-solo were added after the note controls. Each pad has Boolean host parameters for mute and solo, with mute taking precedence. Muted or excluded pads reject new triggers; active voices fade over 5 ms. The grid shows MUTED or SOLO status. HRP5 persists these settings and reads HRP4, HRP3 and HRP2 states. Engine tests cover mute, two soloed pads and transition fades; processor tests cover command validation, state recall and HRP4 migration.
 
 Pad copy, paste, swap and clear now move the sample and all current per-pad settings. Copy captures a separate, temporary buffer; paste checks the 512 MB active kit limit. Swap exchanges content while MIDI notes remain attached to grid slots. Paste, swap and clear cancel pending imports for affected pads, and voices already playing retain their original sample. The editor requires a second confirmation step for paste, swap and clear. The engine and processor tests cover sample and setting transfer, fixed MIDI mapping, clearing and active-voice retention. The clipboard is editor-session data and is not saved in host state.
+
+The engine now uses a bounded 64-slot fade-tail pool when stealing a voice. Gated note-off matches MIDI channel and releases the oldest held note for that pad/channel. Per-pad voice limit is 1 to 4; one voice provides mono retrigger. Velocity curves are soft (square root), linear and hard (square). HRP6 saves the new controls and reads HRP5. Same-offset events follow MIDI buffer order, so the later note in a choke group wins. A native file-drop target routes one supported audio file to the selected pad; Cubase/WebView routing is not yet manually verified.
+
+A headless Release benchmark loaded 16 pads and processed 100,000 blocks of 128 frames at 44.1 kHz with 16 triggers per block: 1.6 million triggers in 5.90 seconds, 0.059 ms average and 0.365 ms worst observed block. Private bytes stayed at 2,543,616 across this run. This is a synthetic closed-editor measurement on this PC, not a DAW timing guarantee or a long-session import/replacement test.
 
 - The React/TypeScript UI production build passed.
 - The Release VST3 and standalone build passed.
@@ -31,9 +35,9 @@ Pad copy, paste, swap and clear now move the sample and all current per-pad sett
 ## Checks and features not yet completed
 
 - Manual Cubase Pro 15 validation of the 0.3.0 editor, loading multiple pads, MIDI 36 to 51, mode, choke, mute/solo and pad operations, cancellation, automation and saved-project recall. The installed 0.2.0 build remains the Cubase-verified version; 0.3.0 has not yet been installed or tested in Cubase.
-- Drag-and-drop import, adjustable velocity response and configurable polyphony.
-- Anti-click fades when stealing voices at the four-voice pad limit or 64-voice global limit; MIDI-channel-aware repeated-note ownership and transport reset behavior.
-- Dense-trigger performance measurement and long-session memory stress.
+- Manual Cubase Pro 15 file-drop routing through the WebView to the selected pad; per-pad drop targeting is not yet implemented.
+- Transport-stop behavior beyond MIDI all-notes-off and engine preparation; worst-case fade-tail saturation may still replace the oldest tail abruptly.
+- Long-session memory stress involving repeated imports, replacements and the editor, plus sustained host performance measurement.
 - The Phase 2 clean disconnected-Windows installation test remains open. The signed offline WebView2 installer and readiness check are prepared, but this PC has no clean Windows VM. This check remains a release gate.
 
 The callback performs no file I/O, JavaScript, routine allocation or blocking lock. Host state writing remains synchronous and can be large; snapshot cost under dense playback and large media requires later hardening.

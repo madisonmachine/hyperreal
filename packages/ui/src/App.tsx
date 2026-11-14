@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from 'react'
-import { audition, cancelLoad, chooseSample, clearPad, copyPad, pastePad, readSnapshot, selectPad, setChokeGroup, setMasterGain, setPadMode, setPadMute, setPadSolo, swapPads, type Snapshot } from './bridge'
+import { audition, cancelLoad, chooseSample, clearPad, copyPad, pastePad, readSnapshot, selectPad, setChokeGroup, setMasterGain, setPadMode, setPadMute, setPadSolo, setVelocityCurve, setVoiceLimit, swapPads, type Snapshot } from './bridge'
 
 const initial: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
@@ -8,7 +8,8 @@ const initial: Snapshot = {
   })),
   sampleName: '', status: 'empty', message: '', durationSeconds: 0,
   sampleRate: 0, masterGain: 1, padLevel: 1, padMode: 0, chokeGroup: 0,
-  muted: false, solo: false, clipboardReady: false
+  muted: false, solo: false, clipboardReady: false,
+  voiceLimit: 4, velocityCurve: 1
 }
 
 export default function App() {
@@ -58,6 +59,8 @@ export default function App() {
       <label>CHOKE GROUP <select value={snapshot.chokeGroup} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, chokeGroup:value })); void setChokeGroup(selected, value) }}>{[0,1,2,3,4].map(group => <option key={group} value={group}>{group === 0 ? 'OFF' : group}</option>)}</select></label>
       <label><input type="checkbox" checked={snapshot.muted} onChange={event => { const value = event.target.checked; setSnapshot(current => ({ ...current, muted:value })); void setPadMute(selected, value) }} /> MUTE</label>
       <label><input type="checkbox" checked={snapshot.solo} onChange={event => { const value = event.target.checked; setSnapshot(current => ({ ...current, solo:value })); void setPadSolo(selected, value) }} /> SOLO</label>
+      <label>VOICES <select value={snapshot.voiceLimit} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, voiceLimit:value })); void setVoiceLimit(selected, value) }}>{[1,2,3,4].map(count => <option key={count} value={count}>{count}</option>)}</select></label>
+      <label>VELOCITY <select value={snapshot.velocityCurve} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, velocityCurve:value })); void setVelocityCurve(selected, value) }}><option value={0}>SOFT</option><option value={1}>LINEAR</option><option value={2}>HARD</option></select></label>
       <span>PAD LEVEL {Math.round(snapshot.padLevel * 100)}%</span>
     </section>
     <section className="pad-operations" aria-label="Pad operations">
@@ -80,6 +83,6 @@ export default function App() {
         <b>{pad.sampleName || 'UNASSIGNED'}</b>
         <span>MIDI {pad.midiNote}</span>
       </button>)}</section>
-    <footer><span>SELECT A PAD, THEN LOAD OR AUDITION</span><span>4 VOICES PER PAD</span></footer>
+    <footer><span>SELECT A PAD, THEN LOAD, DROP OR AUDITION</span><span>1–4 VOICES PER PAD</span></footer>
   </main>
 }

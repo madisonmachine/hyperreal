@@ -161,9 +161,17 @@ int main()
     for (int voice = 0; voice < 5; ++voice)
         midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
     restored.process (audio, midi);
-    if (! near (audio.getSample (0, 0), 2.4f))
+    if (! near (audio.getSample (0, 0), 3.0f))
     {
-        std::cerr << "Per-pad voice bound or deterministic stealing failed\n";
+        std::cerr << "Stolen voice did not enter its release tail\n";
+        return 10;
+    }
+    midi.clear();
+    restored.process (audio, midi);
+    restored.process (audio, midi);
+    if (! near (audio.getSample (0, 127), 2.4f))
+    {
+        std::cerr << "Stolen voice did not finish its release tail\n";
         return 10;
     }
 
@@ -189,8 +197,22 @@ int main()
         return 12;
     }
 
+    restored.prepare (44100.0);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    midi.addEvent (juce::MidiMessage::noteOn (2, 36, static_cast<juce::uint8> (64)), 0);
+    midi.addEvent (juce::MidiMessage::noteOff (2, 36), 64);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 32), 0.902f)
+        || ! near (audio.getSample (0, 127), 0.815f))
+    {
+        std::cerr << "Note-off released a voice from another MIDI channel\n";
+        return 30;
+    }
+
     settings[0].gated = false;
     restored.prepare (44100.0);
+    midi.clear();
     midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
     midi.addEvent (juce::MidiMessage::noteOff (1, 36), 32);
     restored.process (audio, midi, settings);
@@ -336,6 +358,79 @@ int main()
     {
         std::cerr << "Cleared pad still accepted MIDI trigger\n";
         return 29;
+    }
+
+    settings = {};
+    settings[0].voiceLimit = 1;
+    restored.prepare (44100.0);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 64);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 32), 0.6f)
+        || ! near (audio.getSample (0, 64), 1.2f))
+    {
+        std::cerr << "Mono retrigger did not fade the replaced voice\n";
+        return 31;
+    }
+    midi.clear();
+    restored.process (audio, midi, settings);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 127), 0.6f))
+    {
+        std::cerr << "Mono retrigger exceeded its sustained voice limit\n";
+        return 32;
+    }
+
+    settings[0].voiceLimit = 4;
+    settings[0].velocityCurve = 0;
+    restored.prepare (44100.0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (64)), 0);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 0), 0.6f * std::sqrt (64.0f / 127.0f)))
+    {
+        std::cerr << "Soft velocity curve failed\n";
+        return 33;
+    }
+    settings[0].velocityCurve = 2;
+    restored.prepare (44100.0);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 0), 0.6f * (64.0f / 127.0f) * (64.0f / 127.0f)))
+    {
+        std::cerr << "Hard velocity curve failed\n";
+        return 34;
+    }
+
+    settings = {};
+    settings[0].gated = true;
+    restored.prepare (44100.0);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    midi.addEvent (juce::MidiMessage::noteOff (1, 36), 0);
+    restored.process (audio, midi, settings);
+    midi.clear();
+    restored.process (audio, midi, settings);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 127), 0.0f))
+    {
+        std::cerr << "Equal-time note-on/note-off ordering failed\n";
+        return 35;
+    }
+
+    settings = {};
+    settings[0].chokeGroup = 1;
+    settings[2].chokeGroup = 1;
+    restored.prepare (44100.0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 38, static_cast<juce::uint8> (127)), 0);
+    restored.process (audio, midi, settings);
+    midi.clear();
+    restored.process (audio, midi, settings);
+    restored.process (audio, midi, settings);
+    if (! near (audio.getSample (0, 127), 0.4f))
+    {
+        std::cerr << "Equal-time choke ordering failed\n";
+        return 36;
     }
 
     std::cout << "SampleEngine multi-pad smoke passed\n";

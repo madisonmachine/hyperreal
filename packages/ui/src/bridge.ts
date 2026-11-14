@@ -17,6 +17,8 @@ export type Snapshot = {
   muted: boolean
   solo: boolean
   clipboardReady: boolean
+  voiceLimit: number
+  velocityCurve: number
 }
 const demo: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
@@ -26,7 +28,7 @@ const demo: Snapshot = {
   sampleName: '', status: 'empty', message: 'Open the plugin to load a sample.',
   durationSeconds: 0, sampleRate: 0, masterGain: 1,
   padLevel: 1, padMode: 0, chokeGroup: 0, muted: false, solo: false,
-  clipboardReady: false
+  clipboardReady: false, voiceLimit: 4, velocityCurve: 1
 }
 const nativeAvailable = () => Boolean((window as Window & { __JUCE__?: unknown }).__JUCE__)
 export async function readSnapshot(): Promise<Snapshot> {
@@ -58,6 +60,12 @@ export async function setPadMute(pad: number, value: boolean): Promise<void> {
 }
 export async function setPadSolo(pad: number, value: boolean): Promise<void> {
   if (nativeAvailable()) await getNativeFunction('setPadSolo')({ schemaVersion: 3, pad, value: Number(value) })
+}
+export async function setVoiceLimit(pad: number, value: number): Promise<void> {
+  if (nativeAvailable()) await getNativeFunction('setVoiceLimit')({ schemaVersion: 3, pad, value })
+}
+export async function setVelocityCurve(pad: number, value: number): Promise<void> {
+  if (nativeAvailable()) await getNativeFunction('setVelocityCurve')({ schemaVersion: 3, pad, value })
 }
 export async function copyPad(pad: number): Promise<boolean> {
   return nativeAvailable() ? Boolean(await getNativeFunction('copyPad')({ schemaVersion: 4, pad })) : false

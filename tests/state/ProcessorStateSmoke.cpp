@@ -84,8 +84,12 @@ int main()
     const auto muteSet = original.setPadMute (setting (0, 1));
     const auto soloSet = original.setPadSolo (setting (1, 1));
     const auto invalidMuteAccepted = original.setPadMute (setting (0, 2));
-    if (! modeSet || ! chokeSet || ! muteSet || ! soloSet
-        || invalidPadAccepted || invalidChokeAccepted || invalidMuteAccepted)
+    const auto voicesSet = original.setPadVoiceLimit (setting (0, 1));
+    const auto velocitySet = original.setPadVelocityCurve (setting (0, 2));
+    const auto invalidVoicesAccepted = original.setPadVoiceLimit (setting (0, 0));
+    if (! modeSet || ! chokeSet || ! muteSet || ! soloSet || ! voicesSet || ! velocitySet
+        || invalidPadAccepted || invalidChokeAccepted || invalidMuteAccepted
+        || invalidVoicesAccepted)
     {
         std::cerr << "Pad setting command validation failed: " << modeSet << ' '
                   << chokeSet << ' ' << invalidPadAccepted << ' ' << invalidChokeAccepted << "\n";
@@ -105,13 +109,23 @@ int main()
     const auto parameterSize = stateReader.readInt();
     juce::MemoryBlock parameterBytes (static_cast<size_t> (parameterSize));
     stateReader.read (parameterBytes.getData(), parameterSize);
+    auto phase5Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
+                                                           parameterBytes.getSize());
+    phase5Parameters.setProperty ("schema_version", 5, nullptr);
+    for (int child = phase5Parameters.getNumChildren() - 1; child >= 0; --child)
+    {
+        const auto id = phase5Parameters.getChild (child).getProperty ("id").toString();
+        if (id.contains (".voices.") || id.contains (".velocity."))
+            phase5Parameters.removeChild (child, nullptr);
+    }
     auto phase4Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
                                                            parameterBytes.getSize());
     phase4Parameters.setProperty ("schema_version", 4, nullptr);
     for (int child = phase4Parameters.getNumChildren() - 1; child >= 0; --child)
     {
         const auto id = phase4Parameters.getChild (child).getProperty ("id").toString();
-        if (id.contains (".mute.") || id.contains (".solo."))
+        if (id.contains (".mute.") || id.contains (".solo.")
+            || id.contains (".voices.") || id.contains (".velocity."))
             phase4Parameters.removeChild (child, nullptr);
     }
     auto makePreviousState = [&stateReader] (const juce::ValueTree& tree,
@@ -130,6 +144,7 @@ int main()
                       static_cast<size_t> (stateReader.getNumBytesRemaining()));
         return previous;
     };
+    const auto phase5State = makePreviousState (phase5Parameters, "HRP5", 5);
     const auto phase4State = makePreviousState (phase4Parameters, "HRP4", 4);
     auto phase3Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
                                                            parameterBytes.getSize());
@@ -138,7 +153,8 @@ int main()
     {
         const auto id = phase3Parameters.getChild (child).getProperty ("id").toString();
         if (id.contains (".mode.") || id.contains (".choke.")
-            || id.contains (".mute.") || id.contains (".solo."))
+            || id.contains (".mute.") || id.contains (".solo.")
+            || id.contains (".voices.") || id.contains (".velocity."))
             phase3Parameters.removeChild (child, nullptr);
     }
     const auto phase3State = makePreviousState (phase3Parameters, "HRP3", 3);
@@ -149,7 +165,8 @@ int main()
     {
         const auto id = phase2Parameters.getChild (child).getProperty ("id").toString();
         if (id.contains (".mode.") || id.contains (".choke.")
-            || id.contains (".mute.") || id.contains (".solo."))
+            || id.contains (".mute.") || id.contains (".solo.")
+            || id.contains (".voices.") || id.contains (".velocity."))
             phase2Parameters.removeChild (child, nullptr);
     }
     juce::MemoryBlock phase2ParameterBytes;
@@ -182,6 +199,8 @@ int main()
         || std::abs (static_cast<double> (snapshot.getProperty ("masterGain", 0.0)) - 0.5) > 0.001
         || static_cast<int> (snapshot.getProperty ("padMode", -1)) != 1
         || static_cast<int> (snapshot.getProperty ("chokeGroup", -1)) != 2
+        || static_cast<int> (snapshot.getProperty ("voiceLimit", -1)) != 1
+        || static_cast<int> (snapshot.getProperty ("velocityCurve", -1)) != 2
         || ! static_cast<bool> (snapshot.getProperty ("muted", false))
         || ! restored.selectPad (1)
         || ! static_cast<bool> (restored.getSnapshot().getProperty ("solo", false)))
@@ -248,6 +267,15 @@ int main()
         std::cerr << "Phase 4 project migration failed\n";
         return 1;
     }
+    HyperrealAudioProcessor phase5Migrated;
+    phase5Migrated.setStateInformation (phase5State.getData(), static_cast<int> (phase5State.getSize()));
+    if (phase5Migrated.getSnapshot().getProperty ("status", {}).toString() != "ready"
+        || static_cast<int> (phase5Migrated.getSnapshot().getProperty ("voiceLimit", -1)) != 4
+        || static_cast<int> (phase5Migrated.getSnapshot().getProperty ("velocityCurve", -1)) != 1)
+    {
+        std::cerr << "Phase 5 project migration failed\n";
+        return 1;
+    }
 
     HyperrealAudioProcessor operations;
     operations.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
@@ -256,6 +284,8 @@ int main()
         || operations.getSnapshot().getProperty ("status", {}).toString() != "ready"
         || static_cast<int> (operations.getSnapshot().getProperty ("padMode", -1)) != 1
         || static_cast<int> (operations.getSnapshot().getProperty ("chokeGroup", -1)) != 2
+        || static_cast<int> (operations.getSnapshot().getProperty ("voiceLimit", -1)) != 1
+        || static_cast<int> (operations.getSnapshot().getProperty ("velocityCurve", -1)) != 2
         || ! static_cast<bool> (operations.getSnapshot().getProperty ("muted", false)))
     {
         std::cerr << "Pad paste did not copy sample and settings\n";
@@ -278,7 +308,9 @@ int main()
     if (! operations.clearPad (1) || ! operations.selectPad (1)
         || operations.getSnapshot().getProperty ("status", {}).toString() != "empty"
         || static_cast<bool> (operations.getSnapshot().getProperty ("muted", true))
-        || static_cast<int> (operations.getSnapshot().getProperty ("padMode", -1)) != 0)
+        || static_cast<int> (operations.getSnapshot().getProperty ("padMode", -1)) != 0
+        || static_cast<int> (operations.getSnapshot().getProperty ("voiceLimit", -1)) != 4
+        || static_cast<int> (operations.getSnapshot().getProperty ("velocityCurve", -1)) != 1)
     {
         std::cerr << "Pad clear did not reset sample and settings\n";
         return 1;

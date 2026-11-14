@@ -31,6 +31,8 @@ SampleEngine::SampleEngine()
     }
     for (auto& pointer : voicePointers)
         pointer.store (nullptr);
+    for (auto& pointer : tailPointers)
+        pointer.store (nullptr);
     worker = std::thread ([this] { workerLoop(); });
 }
 
@@ -57,6 +59,8 @@ void SampleEngine::prepare (double hostSampleRate) noexcept
     {
         voices[voiceIndex] = {};
         voicePointers[voiceIndex].store (nullptr);
+        fadeTails[voiceIndex] = {};
+        tailPointers[voiceIndex].store (nullptr);
     }
     nextSequence = 1;
 }
@@ -181,11 +185,12 @@ void SampleEngine::beginRelease (Voice& playing) noexcept
     playing.releaseRemaining = playing.releaseTotal;
 }
 
-void SampleEngine::noteOff (int pad) noexcept
+void SampleEngine::noteOff (int pad, int midiChannel) noexcept
 {
     Voice* oldestHeld = nullptr;
     for (auto& playing : voices)
         if (playing.sample != nullptr && playing.pad == pad
+            && playing.midiChannel == midiChannel
             && playing.gated && playing.noteHeld
             && (oldestHeld == nullptr || playing.sequence < oldestHeld->sequence))
             oldestHeld = &playing;
@@ -193,14 +198,15 @@ void SampleEngine::noteOff (int pad) noexcept
         beginRelease (*oldestHeld);
 }
 
-void SampleEngine::releaseAll() noexcept
+void SampleEngine::releaseAll (int midiChannel) noexcept
 {
     for (auto& playing : voices)
-        beginRelease (playing);
+        if (midiChannel == 0 || playing.midiChannel == midiChannel)
+            beginRelease (playing);
 }
 
 void SampleEngine::startVoice (int pad, float velocity, bool audition,
-                               const PlaybackSettings& settings) noexcept
+                               int midiChannel, const PlaybackSettings& settings) noexcept
 {
     if (! audiblePads[pad])
         return;
@@ -237,63 +243,97 @@ void SampleEngine::startVoice (int pad, float velocity, bool audition,
         }
     }
 
-    const auto chosen = activePadVoices >= maxVoicesPerPad ? oldestPadVoice
+    const auto limit = std::clamp (settings[pad].voiceLimit, 1, maxVoicesPerPad);
+    const auto chosen = activePadVoices >= limit ? oldestPadVoice
                        : freeVoice >= 0 ? freeVoice : oldestVoice;
     if (chosen < 0)
         return;
 
+    if (voices[chosen].sample != nullptr)
+    {
+        int tailSlot = -1;
+        int oldestTail = -1;
+        for (int index = 0; index < maxVoices; ++index)
+        {
+            if (fadeTails[index].sample == nullptr)
+            {
+                tailSlot = index;
+                break;
+            }
+            if (oldestTail < 0 || fadeTails[index].sequence < fadeTails[oldestTail].sequence)
+                oldestTail = index;
+        }
+        if (tailSlot < 0)
+            tailSlot = oldestTail;
+        if (tailSlot >= 0)
+        {
+            fadeTails[tailSlot] = voices[chosen];
+            tailPointers[tailSlot].store (fadeTails[tailSlot].sample);
+            beginRelease (fadeTails[tailSlot]);
+        }
+    }
+
     const auto gated = settings[pad].gated && ! audition;
-    voices[chosen] = { sample, 0.0, std::clamp (velocity, 0.0f, 1.0f),
-                       pad, nextSequence++, gated, gated, group, 0, 0 };
+    const auto normalizedVelocity = std::clamp (velocity, 0.0f, 1.0f);
+    const auto curve = std::clamp (settings[pad].velocityCurve, 0, 2);
+    const auto gain = audition ? 1.0f
+                      : curve == 0 ? std::sqrt (normalizedVelocity)
+                      : curve == 2 ? normalizedVelocity * normalizedVelocity
+                                   : normalizedVelocity;
+    voices[chosen] = { sample, 0.0, gain,
+                       pad, midiChannel, nextSequence++, gated, gated, group, 0, 0 };
     voicePointers[chosen].store (sample);
+}
+
+void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& pointer,
+                                juce::AudioBuffer<float>& output, int begin, int end,
+                                const PlaybackSettings& settings) noexcept
+{
+    if (playing.sample == nullptr || output.getNumChannels() < 2)
+        return;
+    auto* left = output.getWritePointer (0);
+    auto* right = output.getWritePointer (1);
+    const auto* source = playing.sample;
+    const auto frames = source->audio.getNumSamples();
+    const auto* sourceLeft = source->audio.getReadPointer (0);
+    const auto* sourceRight = source->audio.getReadPointer (
+        source->audio.getNumChannels() > 1 ? 1 : 0);
+    const auto step = source->sampleRate / hostRate;
+    const auto level = std::clamp (settings[playing.pad].level, 0.0f, 1.0f);
+    for (int frame = begin; frame < end; ++frame)
+    {
+        const auto index = static_cast<int> (playing.position);
+        if (index >= frames)
+        {
+            playing.sample = nullptr;
+            pointer.store (nullptr);
+            break;
+        }
+        const auto next = std::min (index + 1, frames - 1);
+        const auto fraction = static_cast<float> (playing.position - index);
+        const auto releaseGain = playing.releaseRemaining > 0
+            ? static_cast<float> (playing.releaseRemaining) / playing.releaseTotal : 1.0f;
+        left[frame] += (sourceLeft[index] + (sourceLeft[next] - sourceLeft[index]) * fraction)
+                       * playing.gain * level * releaseGain;
+        right[frame] += (sourceRight[index] + (sourceRight[next] - sourceRight[index]) * fraction)
+                        * playing.gain * level * releaseGain;
+        playing.position += step;
+        if (playing.releaseRemaining > 0 && --playing.releaseRemaining == 0)
+        {
+            playing.sample = nullptr;
+            pointer.store (nullptr);
+            break;
+        }
+    }
 }
 
 void SampleEngine::renderRange (juce::AudioBuffer<float>& output, int begin, int end,
                                 const PlaybackSettings& settings) noexcept
 {
-    if (output.getNumChannels() < 2)
-        return;
-    auto* left = output.getWritePointer (0);
-    auto* right = output.getWritePointer (1);
-
-    for (int voiceIndex = 0; voiceIndex < maxVoices; ++voiceIndex)
+    for (int index = 0; index < maxVoices; ++index)
     {
-        auto& playing = voices[voiceIndex];
-        if (playing.sample == nullptr)
-            continue;
-        const auto* source = playing.sample;
-        const auto frames = source->audio.getNumSamples();
-        const auto* sourceLeft = source->audio.getReadPointer (0);
-        const auto* sourceRight = source->audio.getReadPointer (
-            source->audio.getNumChannels() > 1 ? 1 : 0);
-        const auto step = source->sampleRate / hostRate;
-        const auto level = std::clamp (settings[playing.pad].level, 0.0f, 1.0f);
-
-        for (int frame = begin; frame < end; ++frame)
-        {
-            const auto index = static_cast<int> (playing.position);
-            if (index >= frames)
-            {
-                playing.sample = nullptr;
-                voicePointers[voiceIndex].store (nullptr);
-                break;
-            }
-            const auto next = std::min (index + 1, frames - 1);
-            const auto fraction = static_cast<float> (playing.position - index);
-            const auto releaseGain = playing.releaseRemaining > 0
-                ? static_cast<float> (playing.releaseRemaining) / playing.releaseTotal : 1.0f;
-            left[frame] += (sourceLeft[index] + (sourceLeft[next] - sourceLeft[index]) * fraction)
-                           * playing.gain * level * releaseGain;
-            right[frame] += (sourceRight[index] + (sourceRight[next] - sourceRight[index]) * fraction)
-                            * playing.gain * level * releaseGain;
-            playing.position += step;
-            if (playing.releaseRemaining > 0 && --playing.releaseRemaining == 0)
-            {
-                playing.sample = nullptr;
-                voicePointers[voiceIndex].store (nullptr);
-                break;
-            }
-        }
+        renderVoice (voices[index], voicePointers[index], output, begin, end, settings);
+        renderVoice (fadeTails[index], tailPointers[index], output, begin, end, settings);
     }
 }
 
@@ -327,7 +367,7 @@ void SampleEngine::process (juce::AudioBuffer<float>& output, const juce::MidiBu
         if (now != auditionSeen[pad])
         {
             auditionSeen[pad] = now; // Coalesce multiple UI presses within one block.
-            startVoice (pad, 1.0f, true, settings);
+            startVoice (pad, 1.0f, true, 0, settings);
         }
     }
 
@@ -341,21 +381,22 @@ void SampleEngine::process (juce::AudioBuffer<float>& output, const juce::MidiBu
         const auto& midiMessage = event.getMessage();
         if (midiMessage.isAllNotesOff() || midiMessage.isAllSoundOff())
         {
-            releaseAll();
+            releaseAll (midiMessage.getChannel());
             continue;
         }
         if (midiMessage.isNoteOff (true))
         {
             const auto pad = midiMessage.getNoteNumber() - firstMidiNote;
             if (pad >= 0 && pad < padCount)
-                noteOff (pad);
+                noteOff (pad, midiMessage.getChannel());
             continue;
         }
         if (midiMessage.isNoteOn() && midiMessage.getVelocity() > 0.0f)
         {
             const auto pad = midiMessage.getNoteNumber() - firstMidiNote;
             if (pad >= 0 && pad < padCount)
-                startVoice (pad, midiMessage.getFloatVelocity(), false, settings);
+                startVoice (pad, midiMessage.getFloatVelocity(), false,
+                            midiMessage.getChannel(), settings);
         }
     }
 
@@ -409,6 +450,9 @@ void SampleEngine::reapRetired()
     std::erase_if (retired, [this] (const auto& item)
     {
         for (const auto& pointer : voicePointers)
+            if (pointer.load() == item.get())
+                return false;
+        for (const auto& pointer : tailPointers)
             if (pointer.load() == item.get())
                 return false;
         return true;
