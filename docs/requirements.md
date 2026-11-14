@@ -4,11 +4,11 @@ The product brief is authoritative for instrument behaviour. The design brief ad
 
 | Requirement | Source | Phase | Status |
 | --- | --- | --- | --- |
-| Monorepo, reproducible build, VST3 and standalone shell | Product brief, plan | 1 | Local build passed |
+| Monorepo, reproducible build, VST3 and standalone shell | Product brief, plan | 1 | Local and GitHub Actions builds passed |
 | Stable parameter IDs and versioned state contracts | Both briefs, plan | 1 | Initial contracts recorded |
-| CI, changelog and documented build | Product brief, plan | 1 | Configured; remote run pending |
+| CI, changelog and documented build | Product brief, plan | 1 | Main and Phase 2 pull request runs passed |
 | Local React/WebView bundle and native bridge | Design brief, plan | 2 | First-pad slice built; visual check pending |
-| One-pad import, MIDI, audition, offline use and recall | Product brief, plan | 2 | Engine smoke passed; DAW/offline checks pending |
+| One-pad import, MIDI, audition, offline use and recall | Product brief, plan | 2 | Engine and processor recall tests passed; Cubase scanner recognized v0.2.0; interactive DAW/offline checks pending |
 | Sixteen pads, MIDI 36-51, sample operations and voices | Product brief | 3 | Pending |
 | One-shot/gated, velocity, polyphony, choke, mute and solo | Product brief | 3 | Pending |
 | Non-destructive trim, fades, reverse and tuning | Product brief | 4 | Pending |

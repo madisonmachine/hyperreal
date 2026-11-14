@@ -18,10 +18,10 @@ The audio callback reads immutable sample data and prepared atomics. It does no 
 - Debug and Release native smoke tests passed import, sample-offset MIDI, embedded sample restore and invalid-import preservation.
 - Debug and Release full processor recall tests passed after deleting the original WAV, including restored master gain and audible output.
 - The development machine reports WebView2 Runtime 157.0.4341.46.
+- GitHub Actions passed on `main` for the Phase 1 shell and on pull request #1 for this slice, including the Release build, native tests and headless pluginval validation.
+- The current Release VST3 replaced the superseded per-user v0.1.0 installation. Cubase Pro 15's `vstscanner.exe` reported HYPERREAL v0.2.0 as an Instrument and exited successfully. The installed binary matches the tested Release build by SHA-256.
 
 ## Remaining Phase 2 checks
 
-- Inspect the rendered editor and test sample selection/audition through it. Windows computer-use helper was unavailable during this pass.
-- Run the CI workflow after GitHub write access is available.
 - Verify installed operation on a clean offline machine and package an offline WebView2 prerequisite for the eventual installer. Microsoft documents the Evergreen Standalone Installer for offline deployment: https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution
-- Exercise DAW project recall and editor closure in Cubase Pro 15. The available local host validation so far is pluginval.
+- Open the installed instrument in Cubase Pro 15; inspect the editor, select and audition a sample, then exercise project recall and editor closure. The Windows computer-use helper was unavailable during this pass. Scanner recognition does not establish these behaviours.
