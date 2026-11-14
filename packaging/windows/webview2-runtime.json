@@ -1,0 +1,9 @@
+{
+  "name": "Microsoft Edge WebView2 Evergreen Standalone Installer x64",
+  "downloadUrl": "https://go.microsoft.com/fwlink/?linkid=2124701",
+  "fileName": "MicrosoftEdgeWebView2RuntimeInstallerX64.exe",
+  "sha256": "D3CBE8FEDB104282D745FFF106993EFEAD51AE94F5595A4E75804446A974F9C3",
+  "bytes": 215116512,
+  "signer": "Microsoft Corporation",
+  "acquiredUtc": "2026-11-14"
+}

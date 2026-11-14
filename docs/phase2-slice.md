@@ -23,8 +23,9 @@ The audio callback reads immutable sample data and prepared atomics. It does no 
 - Cubase initially displayed the generic parameter editor. Static WebView2 loader linkage removed an unbundled `WebView2Loader.dll` dependency, but Cubase still took the generic fallback. A temporary host diagnostic confirmed that `areOptionsSupported` returned false in Cubase. The check now uses the same writable WebView2 data folder as the actual editor. After reinstalling, Cubase displayed the custom 16-pad interface. The rebuilt Release VST3 passed pluginval level 5 editor tests.
 - In Cubase Pro 15, LOAD SAMPLE selected a generated local WAV, the editor reported READY, and AUDITION played audibly. A saved Cubase project restored the sample and AUDITION remained audible while the source WAV was moved away from its original path. The generated WAV was then restored.
 - The pull request CI run for the editor fix passed the Release build, native tests and pluginval validation.
+- Prepared the Microsoft x64 Evergreen Standalone Installer in the ignored build area. Its Authenticode signature is valid, and `packaging/windows/Test-OfflineReadiness.ps1` passed checks of its recorded SHA-256, the Release VST3, the local UI assets and the installed Runtime. This was an artifact readiness check on the development machine, not a clean offline installation.
 
 ## Remaining Phase 2 checks
 
-- Verify installed operation on a clean offline machine and package an offline WebView2 prerequisite for the eventual installer. Microsoft documents the Evergreen Standalone Installer for offline deployment: https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution
+- Verify installed operation on a clean machine with networking disabled. Include the prepared WebView2 standalone prerequisite in the eventual installer and review current redistribution terms.
 - In Cubase Pro 15, verify MIDI note 36 and audio while the editor is closed, then reopen the editor. The Windows computer-use helper was unavailable during this pass.
