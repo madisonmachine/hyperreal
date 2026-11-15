@@ -9,7 +9,7 @@ The Phase 5 `0.5.0` VST3 was installed in the per-user VST3 folder on 15 Novembe
 
 ## 2. Waveform and tuning (Phase 4)
 
-- Load `hyperreal-sustain-4s.wav` to a spare pad. Open WAVEFORM / SAMPLE EDIT. Confirm the source trace, trim bounds, diagonal fade lines, time/frame readouts, zoom and panning are legible.
+- Load `hyperreal-sustain-4s.wav` to a spare pad. Open the WAVEFORM tab in the main display. Confirm the source trace, trim bounds, diagonal fade lines, time/frame readouts, rotary controls, zoom and panning are legible. Use Shift while dragging a rotary control for fine adjustments; arrow keys also adjust a focused control.
 - Drag start/end and fade tips. Confirm the displayed edit and the sound change immediately, without an Apply action. Move a trim line after setting a fade: the diagonal line should remain anchored to its trim boundary. Reverse playback and check that the playback cursor travels in the new direction while the sample sounds.
 - Start a marker drag and press Escape. Confirm the starting edit returns. Try 1x and 8x zoom and pan to both ends. Check that the cursor moves smoothly through playback and the editor remains responsive.
 - Change coarse and fine tuning, then use semitone snap. Confirm pitch and duration change together and the on-screen duration updates. Listen at the highest upward setting for aliasing or harsh artifacts and report whether the quality is acceptable for percussion.
@@ -23,7 +23,7 @@ The Phase 5 `0.5.0` VST3 was installed in the per-user VST3 folder on 15 Novembe
 
 ## 4. Shaping and modulation (Phase 5)
 
-- On a sustained sample, change amplitude attack, decay, sustain and release. Confirm the graph and numeric values follow the controls and the sound responds. Compare one-shot with gate mode: gated note-off should begin release; one-shot should end at the selected sample boundary.
+- On a sustained sample, open the AMP ENVELOPE tab and turn attack, decay, sustain and release. Confirm the graph and rotary readouts follow the controls and the sound responds. Compare one-shot with gate mode: gated note-off should begin release; one-shot should end at the selected sample boundary.
 - Switch the filter Off, Low-pass, High-pass and Band-pass. Sweep cutoff and Q; confirm distinct audible responses and no explosive output. Set positive and negative filter-envelope depth and change its independent ADSR; confirm its graph and sound respond without altering the amplitude ADSR.
 - Route the LFO to Pitch, then Filter Cutoff. Try slow and fast rates, each of the four shapes, and depth zero versus a clearly audible depth. Confirm zero depth has no audible modulation. Compare Reset Each Note with Free Running by repeatedly triggering a long sample: reset should start from the same phase, while free running should continue between notes.
 - With shaping enabled, verify velocity changes level, mute stops new notes, solo limits playback, choke cuts the previous voice, and repeated triggers respect the voice limit without a loud click.

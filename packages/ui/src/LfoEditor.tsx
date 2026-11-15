@@ -1,5 +1,6 @@
 import { setPadLfo, type Snapshot } from './bridge'
 import { useShapingControls } from './useShapingControls'
+import RotaryControl from './RotaryControl'
 
 type Field = 'destination'|'shape'|'rate'|'depth'|'phase'
 type Values = Record<Field, number>
@@ -7,8 +8,6 @@ const fromSnapshot = (snapshot: Snapshot): Values => ({
   destination: snapshot.lfoDestination, shape: snapshot.lfoShape,
   rate: snapshot.lfoRate, depth: snapshot.lfoDepth, phase: snapshot.lfoPhaseMode
 })
-const ratePosition = (rate: number) => Math.log(rate / 0.05) / Math.log(400)
-const rateAt = (position: number) => 0.05 * Math.pow(400, position)
 const waveAt = (shape: number, phase: number) => shape === 0
   ? Math.sin(2 * Math.PI * phase)
   : shape === 1 ? 1 - 4 * Math.abs(phase - 0.5)
@@ -28,30 +27,21 @@ export default function LfoEditor({ snapshot }: { snapshot: Snapshot }) {
       <path d={preview} />
     </svg>
     <div className="lfo-controls">
-      <label>DESTINATION <select value={values.destination}
-        onChange={event => change('destination', Number(event.target.value))}>
-        <option value={0}>OFF</option><option value={1}>PITCH</option>
-        <option value={2}>FILTER CUTOFF</option>
-      </select></label>
-      <label>SHAPE <select value={values.shape}
-        onChange={event => change('shape', Number(event.target.value))}>
-        <option value={0}>SINE</option><option value={1}>TRIANGLE</option>
-        <option value={2}>SQUARE</option><option value={3}>SAW</option>
-      </select></label>
-      <label>PHASE <select value={values.phase}
-        onChange={event => change('phase', Number(event.target.value))}>
-        <option value={0}>RESET EACH NOTE</option><option value={1}>FREE-RUNNING</option>
-      </select></label>
-      <label>RATE
-        <input type="range" min="0" max="1" step="0.001" value={ratePosition(values.rate)}
-          onChange={event => change('rate', rateAt(Number(event.target.value)))} />
-        <output>{values.rate.toFixed(2)} Hz</output>
-      </label>
-      <label>DEPTH
-        <input type="range" min="0" max="24" step="0.1" value={values.depth}
-          onChange={event => change('depth', Number(event.target.value))} />
-        <output>{values.depth.toFixed(1)} st</output>
-      </label>
+      <RotaryControl label="DESTINATION" value={values.destination} min={0} max={2} step={1}
+        onChange={value => change('destination', value)}
+        format={value => ['OFF', 'PITCH', 'CUTOFF'][value]} accent="#d2b6e4" />
+      <RotaryControl label="SHAPE" value={values.shape} min={0} max={3} step={1}
+        onChange={value => change('shape', value)}
+        format={value => ['SINE', 'TRIANGLE', 'SQUARE', 'SAW'][value]} accent="#d2b6e4" />
+      <RotaryControl label="PHASE" value={values.phase} min={0} max={1} step={1}
+        onChange={value => change('phase', value)}
+        format={value => ['RESET', 'FREE-RUNNING'][value]} accent="#d2b6e4" />
+      <RotaryControl label="RATE" value={values.rate} min={0.05} max={20} step={0.001}
+        scale="log" onChange={value => change('rate', value)}
+        format={value => `${value.toFixed(2)} Hz`} accent="#d2b6e4" />
+      <RotaryControl label="DEPTH" value={values.depth} min={0} max={24} step={0.1}
+        onChange={value => change('depth', value)}
+        format={value => `${value.toFixed(1)} st`} accent="#d2b6e4" />
     </div>
     <p>FREE-RUNNING PHASE CONTINUES BETWEEN NOTES. RATE IS IN HZ, WITHOUT TEMPO SYNC.</p>
     {error && <p className="operation-error" role="alert">{error}</p>}

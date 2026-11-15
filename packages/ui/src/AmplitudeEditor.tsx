@@ -1,5 +1,6 @@
 import { setPadAmplitude, type Snapshot } from './bridge'
 import { useShapingControls } from './useShapingControls'
+import RotaryControl from './RotaryControl'
 
 type Field = 'attack' | 'decay' | 'sustain' | 'release'
 type Values = Record<Field, number>
@@ -27,11 +28,9 @@ export default function AmplitudeEditor({ snapshot }: { snapshot: Snapshot }) {
       <path d={`M 0 72 L ${attackX} 8 L ${decayX} ${sustainY} L ${holdX} ${sustainY} L ${releaseX} 72`} />
     </svg>
     <div className="amplitude-controls">{controls.map(({ field, label, max, unit }) =>
-      <label key={field}>{label}
-        <input type="range" min="0" max={max} step="0.001" value={values[field]}
-          onChange={event => change(field, Number(event.target.value))} />
-        <output>{values[field].toFixed(3)}{unit}</output>
-      </label>)}</div>
+      <RotaryControl key={field} label={label} value={values[field]} min={0} max={max}
+        step={0.001} onChange={value => change(field, value)}
+        format={value => `${value.toFixed(3)}${unit}`} accent="#d5a9e6" />)}</div>
     <p>ONE-SHOT RELEASE ENDS AT THE SAMPLE BOUNDARY. GATE RELEASE STARTS AT NOTE-OFF.</p>
     {error && <p className="operation-error" role="alert">{error}</p>}
   </div>

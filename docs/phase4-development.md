@@ -31,3 +31,5 @@ The completed drag-cancellation UI passes the TypeScript/Vite production build, 
 - In Cubase, verify that HYPERREAL's MIDI output appears as an input on a separate MIDI track, that pad clicks record notes 36–51 there, and that the resulting MIDI part plays HYPERREAL. Check that keyboard input is not duplicated on the output track.
 
 The disconnected clean-Windows installation and sustained host-use checks remain deferred from earlier phases, separately from Phase 4 acceptance.
+
+The Phase 5 editor redesign replaces the earlier waveform numeric entry fields with rotary controls and moves the waveform panel into the main display tabs. The waveform markers, live edit commands, zoom, panning, readouts and cursor remain.

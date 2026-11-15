@@ -1,5 +1,6 @@
 import { setPadFilter, type Snapshot } from './bridge'
 import { useShapingControls } from './useShapingControls'
+import RotaryControl from './RotaryControl'
 
 type Field = 'mode'|'cutoff'|'resonance'|'depth'|'attack'|'decay'|'sustain'|'release'
 type Values = Record<Field, number>
@@ -9,8 +10,6 @@ const fromSnapshot = (snapshot: Snapshot): Values => ({
   attack: snapshot.filterAttack, decay: snapshot.filterDecay,
   sustain: snapshot.filterSustain, release: snapshot.filterRelease
 })
-const cutoffPosition = (cutoff: number) => Math.log(cutoff / 20) / Math.log(1000)
-const cutoffAt = (position: number) => 20 * Math.pow(1000, position)
 
 export default function FilterEditor({ snapshot }: { snapshot: Snapshot }) {
   const { values, error, change } = useShapingControls<Values>(
@@ -28,37 +27,25 @@ export default function FilterEditor({ snapshot }: { snapshot: Snapshot }) {
   ]
   return <div className="filter-editor">
     <div className="filter-controls">
-      <label>MODE <select value={values.mode} onChange={event => change('mode', Number(event.target.value))}>
-        <option value={0}>OFF</option><option value={1}>LOW-PASS</option>
-        <option value={2}>HIGH-PASS</option><option value={3}>BAND-PASS</option>
-      </select></label>
-      <label>CUTOFF
-        <input type="range" min="0" max="1" step="0.001"
-          value={cutoffPosition(values.cutoff)}
-          onChange={event => change('cutoff', cutoffAt(Number(event.target.value)))} />
-        <output>{Math.round(values.cutoff)} Hz</output>
-      </label>
-      <label>RESONANCE Q
-        <input type="range" min="0.5" max="10" step="0.01" value={values.resonance}
-          onChange={event => change('resonance', Number(event.target.value))} />
-        <output>{values.resonance.toFixed(2)}</output>
-      </label>
-      <label>ENVELOPE DEPTH
-        <input type="range" min="-48" max="48" step="0.1" value={values.depth}
-          onChange={event => change('depth', Number(event.target.value))} />
-        <output>{values.depth.toFixed(1)} st</output>
-      </label>
+      <RotaryControl label="MODE" value={values.mode} min={0} max={3} step={1}
+        onChange={value => change('mode', value)}
+        format={value => ['OFF', 'LOW-PASS', 'HIGH-PASS', 'BAND-PASS'][value]} accent="#9ed3be" />
+      <RotaryControl label="CUTOFF" value={values.cutoff} min={20} max={20000} step={1}
+        scale="log" onChange={value => change('cutoff', value)}
+        format={value => `${Math.round(value)} Hz`} accent="#9ed3be" />
+      <RotaryControl label="RESONANCE Q" value={values.resonance} min={0.5} max={10} step={0.01}
+        onChange={value => change('resonance', value)} format={value => value.toFixed(2)} accent="#9ed3be" />
+      <RotaryControl label="ENVELOPE DEPTH" value={values.depth} min={-48} max={48} step={0.1}
+        onChange={value => change('depth', value)} format={value => `${value.toFixed(1)} st`} accent="#9ed3be" />
     </div>
     <span className="filter-heading">FILTER ENVELOPE</span>
     <svg viewBox="0 0 240 80" role="img" aria-label="Independent filter attack, decay, sustain and release graph">
       <path d={`M 0 72 L ${attackX} 8 L ${decayX} ${sustainY} L ${holdX} ${sustainY} L ${releaseX} 72`} />
     </svg>
     <div className="filter-controls">{stages.map(({ field, label, max, unit }) =>
-      <label key={field}>{label}
-        <input type="range" min="0" max={max} step="0.001" value={values[field]}
-          onChange={event => change(field, Number(event.target.value))} />
-        <output>{values[field].toFixed(3)}{unit}</output>
-      </label>)}</div>
+      <RotaryControl key={field} label={label} value={values[field]} min={0} max={max}
+        step={0.001} onChange={value => change(field, value)}
+        format={value => `${value.toFixed(3)}${unit}`} accent="#9ed3be" />)}</div>
     <p>MODE AND ENVELOPE APPLY TO NEW NOTES. CUTOFF, Q AND DEPTH MOVE ACTIVE VOICES.</p>
     {error && <p className="operation-error" role="alert">{error}</p>}
   </div>
