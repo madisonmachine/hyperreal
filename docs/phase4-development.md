@@ -18,6 +18,6 @@ The Release UI and plugin build and both CTest suites pass. Pluginval strictness
 
 - Host checks in Cubase for waveform display, marker dragging, MIDI versus audition consistency, save/reopen and automation of tuning.
 - Listen for aliasing at high transposition and decide whether the current interpolation quality is sufficient. Check extreme zoom in the host editor.
-- Check the editor at different sizes and while audio is playing, including playback cursor and UI responsiveness. Pitch analysis and scale quantization are optional and deferred.
+- Check the fixed-size Cubase editor while audio is playing, including playback cursor, scrolling and UI responsiveness. Host resizing is not exposed by the current editor and belongs to the later interface phase. Pitch analysis and scale quantization are optional and deferred.
 
 The disconnected clean-Windows installation and sustained host-use checks remain deferred from earlier phases, separately from Phase 4 acceptance.
