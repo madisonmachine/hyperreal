@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
 import { setPadLfo, type Snapshot } from './bridge'
+import { useShapingControls } from './useShapingControls'
 
 type Field = 'destination'|'shape'|'rate'|'depth'|'phase'
 type Values = Record<Field, number>
@@ -15,19 +15,8 @@ const waveAt = (shape: number, phase: number) => shape === 0
   : shape === 2 ? (phase < 0.5 ? 1 : -1) : 2 * phase - 1
 
 export default function LfoEditor({ snapshot }: { snapshot: Snapshot }) {
-  const [values, setValues] = useState<Values>(() => fromSnapshot(snapshot))
-  const [error, setError] = useState('')
-  useEffect(() => { setValues(fromSnapshot(snapshot)) }, [
-    snapshot.selectedPad, snapshot.lfoDestination, snapshot.lfoShape, snapshot.lfoRate,
-    snapshot.lfoDepth, snapshot.lfoPhaseMode
-  ])
-  const change = (field: Field, value: number) => {
-    setValues(current => ({ ...current, [field]: value }))
-    setError('')
-    void setPadLfo(snapshot.selectedPad, field, value).then(accepted => {
-      if (!accepted) { setValues(fromSnapshot(snapshot)); setError('LFO CHANGE REJECTED') }
-    }).catch(() => { setValues(fromSnapshot(snapshot)); setError('LFO CHANGE FAILED') })
-  }
+  const { values, error, change } = useShapingControls<Values>(
+    snapshot, fromSnapshot, setPadLfo, 'LFO')
   const preview = Array.from({ length: 97 }, (_, index) => {
     const x = index * 2.5
     const phase = (index / 48) % 1

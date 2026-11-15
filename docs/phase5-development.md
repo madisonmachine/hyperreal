@@ -1,6 +1,6 @@
 # Phase 5 shaping filters and modulation
 
-Development began 15 November 2026 on `phase5-shaping-filters-modulation`, based on the Phase 4 branch. This is the first implementation slice, not Phase 5 sign-off. Phase 4 Cubase checks remain deferred to the combined host pass at the end of Phase 5.
+Development began 15 November 2026 on `phase5-shaping-filters-modulation`, based on the Phase 4 branch. Local implementation and native checks have progressed through the shaping controls; Phase 5 is not signed off. Phase 4 Cubase checks remain deferred to the combined host pass at the end of Phase 5.
 
 ## Implemented
 
@@ -10,6 +10,7 @@ Development began 15 November 2026 on `phase5-shaping-filters-modulation`, based
 - Added per-voice stereo state-variable filters with Off, low-pass, high-pass and band-pass modes. Cutoff is capped for the host rate, Q is limited to 0.5–10, and bipolar filter-envelope depth spans ±48 semitones. A separate filter ADSR controls that depth. Cutoff, Q and depth update active voices with smoothed coefficients; mode and envelope settings take effect on new voices. Filter state stays with each voice, including overlapping and stolen voices.
 - Added host parameters, a filter panel and an independent envelope graph. `HRP9` persists filter settings and reads `HRP8` sessions with filter defaults. Pad copy, paste, swap and clear include the filter settings.
 - Added per-voice LFO modulation of pitch or filter cutoff, with sine, triangle, square and saw shapes; 0.05–20 Hz rate; 0–24 semitone depth; and reset or free-running phase. Reset starts at phase zero on each voice; free-running phase continues between notes and resets when audio preparation restarts. Destination, shape and phase mode are captured at note onset. Rate and depth read live host values. The editor shows host-backed controls and a waveform preview. `HR10` state saves LFO settings and reads `HRP9` sessions with defaults. Pad copy, paste, swap and clear include LFO settings.
+- Formatted Phase 5 host parameter values and units for seconds, hertz, Q and semitones, while retaining their parameter IDs, ranges and normalization. The editor polls native parameter snapshots with one read in flight. Amplitude, filter and LFO controls now share a bounded write queue: one native command is in flight per shaping panel, slider events for the same field collapse to the latest value, and commands are spaced by at least 16 ms. A pending local value is displayed immediately; a matching native snapshot confirms it, while failed commands restore the native value.
 
 ## Checked locally
 
@@ -19,8 +20,10 @@ The filter slice also passes the React/TypeScript build, Release VST3 build, bot
 
 The LFO slice passes the React/TypeScript build, Release VST3 build, both CTest suites and pluginval strictness 5 with editor checks. Engine audio regressions cover reset and free-running pitch phase and cutoff modulation. Processor checks cover invalid LFO commands, `HR10` recall, `HRP9` migration and pad operations. The synthetic full shaping chain benchmark processed 1.6 million triggers in 100,000 blocks of 128 frames at 44.1 kHz: 0.597 ms average and 1.589 ms worst observed block, with private bytes falling from 4,186,112 to 4,091,904 during dense triggering. This is a local closed-editor result, not a host guarantee.
 
+The automation presentation slice passes the React/TypeScript build, Release VST3 build, both native suites and pluginval strictness 5 with editor checks. The processor test checks host text and units for amplitude attack, filter cutoff and depth, and LFO rate and depth. It also changes filter cutoff and LFO rate through the host parameter API and confirms those values reach the editor snapshot. The control queue is verified by build and code review; its drag behavior and visible host-originated automation still require the combined Cubase pass. A full-chain stress matrix exercises three host rates (1, 44.1 and 96 kHz), all three filter modes, all four LFO shapes, pitch and cutoff destinations, 20 Hz modulation, maximum resonance, alternating cutoff and envelope depth, and repeated triggers. Output stayed finite and bounded in every case. A ten-second silent tail returned exactly to silence in the local test.
+
 ## Remaining Phase 5 work
 
-- Complete control presentation and host automation behavior, including display text, dense-update coalescing and visible host changes. Assess the filter and ADSR range ergonomics and schematic graphs in the host editor.
-- Rendered audio comparisons, stability tests at extreme modulation and resonance, sample-rate changes and long silence, listening checks, and a new benchmark with the full shaping chain.
+- Check visible host-originated automation, sustained slider drags, range ergonomics and envelope graphs in Cubase.
+- Percussion listening checks, Cubase automation/drag checks and any issues those reveal. Extend full-chain rendered-audio comparisons if host listening uncovers a mismatch.
 - Combined Phase 4/5 Cubase checks at the end of Phase 5. The current installed per-user VST3 remains the validated Phase 4 build; the Phase 5 development build has not been installed for host testing.

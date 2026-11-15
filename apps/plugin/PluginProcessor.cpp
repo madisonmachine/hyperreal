@@ -18,6 +18,19 @@ constexpr char phase5Magic[] = { 'H', 'R', 'P', '5' };
 constexpr char phase4Magic[] = { 'H', 'R', 'P', '4' };
 constexpr char phase3Magic[] = { 'H', 'R', 'P', '3' };
 constexpr char phase2Magic[] = { 'H', 'R', 'P', '2' };
+juce::AudioParameterFloatAttributes displayAs (const char* unit, int decimals)
+{
+    return juce::AudioParameterFloatAttributes()
+        .withLabel (unit)
+        .withStringFromValueFunction ([decimals] (float value, int)
+        {
+            return juce::String (value, decimals);
+        })
+        .withValueFromStringFunction ([] (const juce::String& text)
+        {
+            return text.getFloatValue();
+        });
+}
 }
 
 HyperrealAudioProcessor::HyperrealAudioProcessor()
@@ -732,7 +745,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout HyperrealAudioProcessor::cre
             layout.push_back (std::make_unique<juce::AudioParameterFloat> (
                 juce::ParameterID { id, 1 }, name,
                 juce::NormalisableRange<float> (0.0f, stage == 2 ? 1.0f : 10.0f,
-                                                 0.001f), defaults[stage]));
+                                                 0.001f), defaults[stage],
+                displayAs (stage == 2 ? "" : "s", 3)));
         }
     }
 
@@ -747,13 +761,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout HyperrealAudioProcessor::cre
             juce::StringArray { "Off", "Low-pass", "High-pass", "Band-pass" }, 0));
         layout.push_back (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { prefix + "cutoff.v1", 1 }, label + "cutoff Hz",
-            cutoffRange, 20000.0f));
+            cutoffRange, 20000.0f, displayAs ("Hz", 0)));
         layout.push_back (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { prefix + "resonance.v1", 1 }, label + "resonance Q",
-            juce::NormalisableRange<float> (0.5f, 10.0f, 0.01f), 0.707f));
+            juce::NormalisableRange<float> (0.5f, 10.0f, 0.01f), 0.707f,
+            displayAs ("", 2)));
         layout.push_back (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { prefix + "depth.v1", 1 }, label + "envelope depth semitones",
-            juce::NormalisableRange<float> (-48.0f, 48.0f, 0.1f), 0.0f));
+            juce::NormalisableRange<float> (-48.0f, 48.0f, 0.1f), 0.0f,
+            displayAs ("st", 1)));
         constexpr const char* envelopeNames[] { "attack", "decay", "sustain", "release" };
         constexpr float defaults[] { 0.0f, 0.0f, 1.0f, 0.0f };
         for (int stage = 0; stage < 4; ++stage)
@@ -762,7 +778,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout HyperrealAudioProcessor::cre
                 label + "envelope " + envelopeNames[stage]
                     + (stage == 2 ? " level" : " seconds"),
                 juce::NormalisableRange<float> (0.0f, stage == 2 ? 1.0f : 10.0f,
-                                                 0.001f), defaults[stage]));
+                                                 0.001f), defaults[stage],
+                displayAs (stage == 2 ? "" : "s", 3)));
     }
 
     auto lfoRateRange = juce::NormalisableRange<float> (0.05f, 20.0f, 0.001f);
@@ -779,10 +796,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout HyperrealAudioProcessor::cre
             juce::StringArray { "Sine", "Triangle", "Square", "Saw" }, 0));
         layout.push_back (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { prefix + "rate.v1", 1 }, label + "rate Hz",
-            lfoRateRange, 1.0f));
+            lfoRateRange, 1.0f, displayAs ("Hz", 2)));
         layout.push_back (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { prefix + "depth.v1", 1 }, label + "depth semitones",
-            juce::NormalisableRange<float> (0.0f, 24.0f, 0.1f), 0.0f));
+            juce::NormalisableRange<float> (0.0f, 24.0f, 0.1f), 0.0f,
+            displayAs ("st", 1)));
         layout.push_back (std::make_unique<juce::AudioParameterChoice> (
             juce::ParameterID { prefix + "phase.v1", 1 }, label + "phase",
             juce::StringArray { "Reset", "Free-running" }, 0));

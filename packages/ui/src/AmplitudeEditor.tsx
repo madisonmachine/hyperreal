@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
 import { setPadAmplitude, type Snapshot } from './bridge'
+import { useShapingControls } from './useShapingControls'
 
 type Field = 'attack' | 'decay' | 'sustain' | 'release'
 type Values = Record<Field, number>
@@ -9,18 +9,8 @@ const fromSnapshot = (snapshot: Snapshot): Values => ({
 })
 
 export default function AmplitudeEditor({ snapshot }: { snapshot: Snapshot }) {
-  const [values, setValues] = useState<Values>(() => fromSnapshot(snapshot))
-  const [error, setError] = useState('')
-  useEffect(() => { setValues(fromSnapshot(snapshot)) }, [
-    snapshot.ampAttack, snapshot.ampDecay, snapshot.ampSustain, snapshot.ampRelease
-  ])
-  const change = (field: Field, value: number) => {
-    setValues(current => ({ ...current, [field]: value }))
-    setError('')
-    void setPadAmplitude(snapshot.selectedPad, field, value).then(accepted => {
-      if (!accepted) { setValues(fromSnapshot(snapshot)); setError('ENVELOPE CHANGE REJECTED') }
-    }).catch(() => { setValues(fromSnapshot(snapshot)); setError('ENVELOPE CHANGE FAILED') })
-  }
+  const { values, error, change } = useShapingControls<Values>(
+    snapshot, fromSnapshot, setPadAmplitude, 'ENVELOPE')
   const attackX = Math.min(62, values.attack * 10)
   const decayX = attackX + Math.min(62, values.decay * 10)
   const sustainY = 72 - values.sustain * 64
@@ -42,7 +32,7 @@ export default function AmplitudeEditor({ snapshot }: { snapshot: Snapshot }) {
           onChange={event => change(field, Number(event.target.value))} />
         <output>{values[field].toFixed(3)}{unit}</output>
       </label>)}</div>
-    <p>ONE-SHOT RELEASE ENDS AT THE SAMPLE BOUNDARY · GATE RELEASE STARTS AT NOTE-OFF</p>
+    <p>ONE-SHOT RELEASE ENDS AT THE SAMPLE BOUNDARY. GATE RELEASE STARTS AT NOTE-OFF.</p>
     {error && <p className="operation-error" role="alert">{error}</p>}
   </div>
 }

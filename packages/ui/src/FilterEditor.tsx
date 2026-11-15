@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
 import { setPadFilter, type Snapshot } from './bridge'
+import { useShapingControls } from './useShapingControls'
 
 type Field = 'mode'|'cutoff'|'resonance'|'depth'|'attack'|'decay'|'sustain'|'release'
 type Values = Record<Field, number>
@@ -13,20 +13,8 @@ const cutoffPosition = (cutoff: number) => Math.log(cutoff / 20) / Math.log(1000
 const cutoffAt = (position: number) => 20 * Math.pow(1000, position)
 
 export default function FilterEditor({ snapshot }: { snapshot: Snapshot }) {
-  const [values, setValues] = useState<Values>(() => fromSnapshot(snapshot))
-  const [error, setError] = useState('')
-  useEffect(() => { setValues(fromSnapshot(snapshot)) }, [
-    snapshot.filterMode, snapshot.filterCutoff, snapshot.filterResonance,
-    snapshot.filterDepth, snapshot.filterAttack, snapshot.filterDecay,
-    snapshot.filterSustain, snapshot.filterRelease
-  ])
-  const change = (field: Field, value: number) => {
-    setValues(current => ({ ...current, [field]: value }))
-    setError('')
-    void setPadFilter(snapshot.selectedPad, field, value).then(accepted => {
-      if (!accepted) { setValues(fromSnapshot(snapshot)); setError('FILTER CHANGE REJECTED') }
-    }).catch(() => { setValues(fromSnapshot(snapshot)); setError('FILTER CHANGE FAILED') })
-  }
+  const { values, error, change } = useShapingControls<Values>(
+    snapshot, fromSnapshot, setPadFilter, 'FILTER')
   const attackX = Math.min(62, values.attack * 10)
   const decayX = attackX + Math.min(62, values.decay * 10)
   const sustainY = 72 - values.sustain * 64
@@ -71,7 +59,7 @@ export default function FilterEditor({ snapshot }: { snapshot: Snapshot }) {
           onChange={event => change(field, Number(event.target.value))} />
         <output>{values[field].toFixed(3)}{unit}</output>
       </label>)}</div>
-    <p>MODE AND ENVELOPE APPLY TO NEW NOTES · CUTOFF, Q AND DEPTH MOVE ACTIVE VOICES</p>
+    <p>MODE AND ENVELOPE APPLY TO NEW NOTES. CUTOFF, Q AND DEPTH MOVE ACTIVE VOICES.</p>
     {error && <p className="operation-error" role="alert">{error}</p>}
   </div>
 }

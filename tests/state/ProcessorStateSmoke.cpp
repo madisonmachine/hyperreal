@@ -160,6 +160,46 @@ int main()
                   << chokeSet << ' ' << invalidPadAccepted << ' ' << invalidChokeAccepted << "\n";
         return 1;
     }
+    const auto hostTextMatches = [&original] (const juce::String& name,
+                                               const juce::String& text,
+                                               const juce::String& unit)
+    {
+        for (auto* parameter : original.getParameters())
+            if (parameter->getName (128) == name)
+                return parameter->getCurrentValueAsText() == text
+                    && parameter->getLabel() == unit;
+        return false;
+    };
+    if (! hostTextMatches ("Pad 01 amplitude attack seconds", "0.001", "s")
+        || ! hostTextMatches ("Pad 01 filter cutoff Hz", "5000", "Hz")
+        || ! hostTextMatches ("Pad 01 filter envelope depth semitones", "12.0", "st")
+        || ! hostTextMatches ("Pad 01 LFO rate Hz", "5.00", "Hz")
+        || ! hostTextMatches ("Pad 01 LFO depth semitones", "12.0", "st"))
+    {
+        std::cerr << "Host parameter text or unit mismatch\n";
+        return 1;
+    }
+    HyperrealAudioProcessor hostAutomation;
+    auto* automatedCutoff = static_cast<juce::AudioProcessorParameter*> (nullptr);
+    auto* automatedRate = static_cast<juce::AudioProcessorParameter*> (nullptr);
+    for (auto* parameter : hostAutomation.getParameters())
+    {
+        if (parameter->getName (128) == "Pad 01 filter cutoff Hz")
+            automatedCutoff = parameter;
+        if (parameter->getName (128) == "Pad 01 LFO rate Hz")
+            automatedRate = parameter;
+    }
+    if (automatedCutoff == nullptr || automatedRate == nullptr)
+        return 1;
+    automatedCutoff->setValueNotifyingHost (0.25f);
+    automatedRate->setValueNotifyingHost (0.7f);
+    const auto automatedSnapshot = hostAutomation.getSnapshot();
+    if (static_cast<double> (automatedSnapshot.getProperty ("filterCutoff", 0.0)) <= 20.0
+        || static_cast<double> (automatedSnapshot.getProperty ("lfoRate", 0.0)) <= 1.0)
+    {
+        std::cerr << "Host-originated automation did not reach the editor snapshot\n";
+        return 1;
+    }
     auto* editCommand = new juce::DynamicObject();
     editCommand->setProperty ("schemaVersion", 6);
     editCommand->setProperty ("pad", 0);

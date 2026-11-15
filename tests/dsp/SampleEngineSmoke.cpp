@@ -1013,6 +1013,65 @@ int main()
         return 81;
     }
 
+    SampleEngine::PlaybackSettings stressSettings {};
+    stressSettings[0].amplitude = { 0.002f, 0.005f, 0.7f, 0.01f };
+    stressSettings[0].filter = { 1, 200.0f, 10.0f, 48.0f,
+                                 { 0.002f, 0.005f, 0.5f, 0.01f } };
+    stressSettings[0].lfo = { 2, 0, 20.0f, 24.0f, 0 };
+    juce::AudioBuffer<float> stressAudio (2, 128);
+    juce::MidiBuffer stressMidi;
+    for (const double hostRate : { 1000.0, 44100.0, 96000.0 })
+        for (int mode = 1; mode <= 3; ++mode)
+            for (int shape = 0; shape < 4; ++shape)
+            {
+                filterEngine.prepare (hostRate);
+                stressSettings[0].filter.mode = mode;
+                stressSettings[0].lfo.shape = shape;
+                stressSettings[0].lfo.destination = shape % 2 == 0 ? 2 : 1;
+                bool audible = false;
+                for (int block = 0; block < 80; ++block)
+                {
+                    stressSettings[0].filter.cutoffHz = block % 2 == 0 ? 20.0f : 20000.0f;
+                    stressSettings[0].filter.envelopeDepthSemitones = block % 2 == 0 ? 48.0f : -48.0f;
+                    stressMidi.clear();
+                    if (block % 8 == 0)
+                        stressMidi.addEvent (juce::MidiMessage::noteOn (
+                            1, 36, static_cast<juce::uint8> (127)), 0);
+                    filterEngine.process (stressAudio, stressMidi, stressSettings);
+                    for (int channel = 0; channel < stressAudio.getNumChannels(); ++channel)
+                        for (int frame = 0; frame < stressAudio.getNumSamples(); ++frame)
+                        {
+                            const auto sample = stressAudio.getSample (channel, frame);
+                            if (! std::isfinite (sample) || std::abs (sample) > 64.0f)
+                            {
+                                std::cerr << "Fast full-chain modulation produced unstable output\n";
+                                return 82;
+                            }
+                            audible = audible || std::abs (sample) > 1.0e-5f;
+                        }
+                }
+                if (! audible)
+                {
+                    std::cerr << "Full-chain stress case produced no audio\n";
+                    return 83;
+                }
+            }
+    filterEngine.prepare (44100.0);
+    stressSettings[0].filter.mode = 1;
+    stressSettings[0].lfo = { 2, 0, 20.0f, 24.0f, 1 };
+    stressMidi.clear();
+    stressMidi.addEvent (juce::MidiMessage::noteOn (
+        1, 36, static_cast<juce::uint8> (127)), 0);
+    filterEngine.process (stressAudio, stressMidi, stressSettings);
+    stressMidi.clear();
+    for (int block = 0; block < 3446; ++block)
+        filterEngine.process (stressAudio, stressMidi, stressSettings);
+    if (stressAudio.getMagnitude (0, stressAudio.getNumSamples()) > 1.0e-7f)
+    {
+        std::cerr << "Full-chain long-silence tail did not end\n";
+        return 84;
+    }
+
     std::cout << "SampleEngine multi-pad smoke passed\n";
     return 0;
 }
