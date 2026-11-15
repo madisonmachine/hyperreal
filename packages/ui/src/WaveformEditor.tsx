@@ -19,6 +19,7 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const cursorCanvas = useRef<HTMLCanvasElement>(null)
   const dragging = useRef<Marker | null>(null)
+  const dragOrigin = useRef<{ edit: EditDraft; revision: number; pointerId: number } | null>(null)
   const summaries = useRef(new Map<string, Waveform>())
   const [draft, setDraft] = useState<EditDraft>(() => fromSnapshot(snapshot))
   const [frameEntries, setFrameEntries] = useState(() => {
@@ -56,6 +57,8 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
     const incoming = fromSnapshot(snapshot)
     if (revision.current !== snapshot.sampleRevision) {
       revision.current = snapshot.sampleRevision
+      dragging.current = null
+      dragOrigin.current = null
       pendingEdit.current = null
       awaitingSnapshot.current = null
       editRef.current = incoming
@@ -171,6 +174,26 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
     pendingEdit.current = next
     void flushEdits()
   }
+  const cancelDrag = () => {
+    const origin = dragOrigin.current
+    if (!origin) return
+    dragOrigin.current = null
+    dragging.current = null
+    if (origin.revision === revision.current)
+      changeEdit(() => origin.edit)
+    if (canvas.current?.hasPointerCapture(origin.pointerId))
+      canvas.current.releasePointerCapture(origin.pointerId)
+  }
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && dragOrigin.current) {
+        event.preventDefault()
+        cancelDrag()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  })
   const flushTune = async () => {
     if (sendingTune.current) return
     sendingTune.current = true
@@ -416,6 +439,7 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
   }
   const pointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
     if (!frames) return
+    if (dragOrigin.current) return
     const bounds = event.currentTarget.getBoundingClientRect()
     const x = event.clientX - bounds.left
     const fadeTipLane = event.clientY - bounds.top < bounds.height / 3
@@ -424,12 +448,15 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
       : [['start', draft.startFrame], ['end', draft.endFrame]]
     positions.sort((left, right) => Math.abs(toPixel(left[1], bounds.width) - x)
       - Math.abs(toPixel(right[1], bounds.width) - x))
+    dragOrigin.current = { edit: { ...editRef.current }, revision: revision.current,
+      pointerId: event.pointerId }
     dragging.current = positions[0][0]
     event.currentTarget.setPointerCapture(event.pointerId)
     moveMarker(dragging.current, positionFromPointer(event))
   }
   const finishDrag = (event: PointerEvent<HTMLCanvasElement>) => {
     dragging.current = null
+    dragOrigin.current = null
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId)
   }
@@ -457,7 +484,8 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
       <canvas ref={canvas} className="wave-canvas" aria-label="Sample waveform: drag fade tips at the top or trim markers below; edits apply immediately"
         onPointerDown={pointerDown}
         onPointerMove={event => { if (dragging.current) moveMarker(dragging.current, positionFromPointer(event)) }}
-        onPointerUp={finishDrag} onPointerCancel={finishDrag} />
+        onPointerUp={finishDrag} onPointerCancel={cancelDrag}
+        onLostPointerCapture={cancelDrag} />
       <canvas ref={cursorCanvas} className="wave-cursor" aria-hidden="true" />
     </div>
     <div className="wave-readout"><span>START {seconds(draft.startFrame)} S</span><span>END {seconds(draft.endFrame)} S</span><span>{frames} SOURCE FRAMES</span></div>

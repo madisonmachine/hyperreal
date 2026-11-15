@@ -11,6 +11,7 @@ Development started 14 November 2026 on `phase4-waveform-editing-tuning` from th
 - Host state `HRP7` stores edit metadata and tune parameters. Older `HRP6` through `HRP2` states migrate with full-region default edits and zero tuning. Copy, paste, swap and clear include or reset the new fields.
 - The import worker now rejects source rates above 384 kHz, matching host-state restore validation. This prevents out-of-range default edit calculations while preserving any sample already loaded on that pad. Malformed edit state is rejected before waveform summaries are generated.
 - Pad clicks now advertise and emit MIDI notes 36–51 on channel 1, with a short 100 ms gate, as well as auditioning the audio. Incoming keyboard MIDI is consumed by the instrument and is not echoed on this output. Cubase records an instrument track's input before the instrument runs, so these click events require a separate MIDI track whose input is HYPERREAL's MIDI output. Record that track and route its output back to HYPERREAL for playback. Recording clicks directly into the same instrument track is outside the VST3 instrument signal path.
+- Waveform marker drags apply live. Pressing Escape during a drag, or losing/cancelling its pointer capture, restores the edit values from before that drag through the same native edit path. Releasing normally keeps the live changes. This provides safe gesture cancellation without draft-edit buttons.
 
 ## Checked locally
 
@@ -18,7 +19,9 @@ The Release UI and plugin build and both CTest suites pass. Pluginval strictness
 
 The updated live-edit VST3 also passes the Release build, both CTest suites and pluginval strictness 5. It is installed for the revised Cubase checks; the previous per-user bundle is backed up in `build/manual-test`. Native regressions cover rejection of a stale sample revision and reverse playback cursor speed. A further 5,000 immediate pad edits while audio processing left private bytes unchanged at 4,128,768 on this synthetic run.
 
-The pad-click MIDI output update passes the Release VST3 build, both native test suites and pluginval strictness 5. A processor regression verifies click note-on/note-off, audible audition and no keyboard MIDI echo. The Cubase recording route remains to be verified after installing this bundle while Cubase is closed.
+The pad-click MIDI output update passes the Release VST3 build, both native test suites and pluginval strictness 5. A processor regression verifies click note-on/note-off, audible audition and no keyboard MIDI echo. The Cubase recording route remains to be verified.
+
+The completed drag-cancellation UI passes the TypeScript/Vite production build, Release VST3 build, both native CTest suites and pluginval strictness 5 with editor checks. The installed per-user VST3 binary hash matches the validated Release build. Cubase gesture and MIDI-output routing checks remain deferred to the combined Phase 4/5 host test pass.
 
 ## Still required for Phase 4 sign-off
 
