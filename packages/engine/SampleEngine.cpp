@@ -29,6 +29,7 @@ SampleEngine::SampleEngine()
         midiTriggerCounters[pad].store (0);
         playbackFrames[pad].store (-1);
         playbackSpeeds[pad].store (0.0f);
+        freeLfoPhases[pad] = 0.0;
         status[pad] = "empty";
         message[pad] = "Load WAV, AIFF or FLAC to begin.";
     }
@@ -52,7 +53,8 @@ SampleEngine::~SampleEngine()
 
 void SampleEngine::prepare (double hostSampleRate) noexcept
 {
-    hostRate = hostSampleRate > 0.0 ? hostSampleRate : 44100.0;
+    hostRate = std::isfinite (hostSampleRate) && hostSampleRate > 0.0
+        ? hostSampleRate : 44100.0;
     transportStopRequested.store (false);
     for (int pad = 0; pad < padCount; ++pad)
     {
@@ -60,6 +62,7 @@ void SampleEngine::prepare (double hostSampleRate) noexcept
         audiblePads[pad] = true;
         playbackFrames[pad].store (-1);
         playbackSpeeds[pad].store (0.0f);
+        freeLfoPhases[pad] = 0.0;
     }
     for (int voiceIndex = 0; voiceIndex < maxVoices; ++voiceIndex)
     {
@@ -428,6 +431,14 @@ void SampleEngine::startVoice (int pad, float velocity, bool audition,
     filterEnvelope.sustain = valid (filterEnvelope.sustain, 1.0f, 1.0f);
     filterEnvelope.releaseSeconds = valid (filterEnvelope.releaseSeconds, 0.0f, 10.0f);
     playing.filterEnvelopeLevel = filterEnvelope.attackSeconds > 0.0f ? 0.0f : 1.0f;
+    playing.lfo = settings[pad].lfo;
+    playing.lfo.destination = std::clamp (playing.lfo.destination, 0, 2);
+    playing.lfo.shape = std::clamp (playing.lfo.shape, 0, 3);
+    playing.lfo.phaseMode = std::clamp (playing.lfo.phaseMode, 0, 1);
+    playing.lfo.rateHz = std::isfinite (playing.lfo.rateHz)
+        ? std::clamp (playing.lfo.rateHz, 0.05f, 20.0f) : 1.0f;
+    playing.lfo.depthSemitones = valid (playing.lfo.depthSemitones, 0.0f, 24.0f);
+    playing.lfoDepthCurrent = playing.lfo.depthSemitones;
     voicePointers[chosen].store (sample);
 }
 
@@ -448,9 +459,9 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
     const auto semitones = std::clamp (settings[playing.pad].coarseSemitones, -24, 24)
                            + std::clamp (settings[playing.pad].fineCents, -100.0f, 100.0f) / 100.0;
     const auto pitchRatio = semitones == 0.0 ? 1.0 : std::pow (2.0, semitones / 12.0);
-    const auto targetStep = source->data->sampleRate / hostRate * pitchRatio;
+    const auto baseStep = source->data->sampleRate / hostRate * pitchRatio;
     if (playing.step <= 0.0)
-        playing.step = targetStep;
+        playing.step = baseStep;
     const auto stepSmoothing = std::min (1.0, 1.0 / (hostRate * 0.01));
     const auto level = std::clamp (settings[playing.pad].level, 0.0f, 1.0f);
     const auto fadeInInverse = edit.fadeInFrames > 0 ? 1.0 / edit.fadeInFrames : 0.0;
@@ -463,6 +474,11 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
     const auto filterDecayFrames = static_cast<juce::uint64> (
         hostRate * playing.filter.envelope.decaySeconds);
     const auto filterSmoothing = std::min (1.0, 1.0 / (hostRate * 0.005));
+    const auto lfoRate = std::isfinite (settings[playing.pad].lfo.rateHz)
+        ? std::clamp (settings[playing.pad].lfo.rateHz, 0.05f, 20.0f) : 1.0f;
+    const auto lfoDepth = std::isfinite (settings[playing.pad].lfo.depthSemitones)
+        ? std::clamp (settings[playing.pad].lfo.depthSemitones, 0.0f, 24.0f) : 0.0f;
+    const auto freePhase = freeLfoPhases[playing.pad];
     for (int frame = begin; frame < end; ++frame)
     {
         if (playing.position >= regionFrames)
@@ -470,6 +486,33 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
             playing.sample = nullptr;
             pointer.store (nullptr);
             break;
+        }
+        if (playing.lfo.destination != 0)
+        {
+            playing.lfoDepthCurrent += static_cast<float> (
+                (lfoDepth - playing.lfoDepthCurrent) * filterSmoothing);
+            const auto phase = playing.lfo.phaseMode == 0
+                ? playing.lfoPhase
+                : std::fmod (freePhase + (frame - begin) * lfoRate / hostRate, 1.0);
+            if (playing.lfoUpdateCountdown-- <= 0)
+            {
+                const auto wave = playing.lfo.shape == 0
+                    ? std::sin (juce::MathConstants<double>::twoPi * phase)
+                    : playing.lfo.shape == 1 ? 1.0 - 4.0 * std::abs (phase - 0.5)
+                    : playing.lfo.shape == 2 ? (phase < 0.5 ? 1.0 : -1.0)
+                                             : 2.0 * phase - 1.0;
+                playing.lfoValueTarget = static_cast<float> (wave);
+                playing.lfoUpdateCountdown = 7;
+                if (playing.lfo.destination == 1)
+                    playing.lfoPitchRatio = std::exp2 (
+                        playing.lfoValueTarget * playing.lfoDepthCurrent / 12.0);
+            }
+            playing.lfoValueCurrent += (playing.lfoValueTarget - playing.lfoValueCurrent) * 0.25f;
+            if (playing.lfo.phaseMode == 0)
+            {
+                playing.lfoPhase += lfoRate / hostRate;
+                playing.lfoPhase -= std::floor (playing.lfoPhase);
+            }
         }
         const auto sourcePosition = edit.reversed
             ? static_cast<double> (edit.endFrame - 1) - playing.position
@@ -546,8 +589,11 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
                     ? std::clamp (live.cutoffHz, 20.0f, 20000.0f) : 20000.0f;
                 const auto depth = std::isfinite (live.envelopeDepthSemitones)
                     ? std::clamp (live.envelopeDepthSemitones, -48.0f, 48.0f) : 0.0f;
+                const auto lfoOffset = playing.lfo.destination == 2
+                    ? playing.lfoValueCurrent * playing.lfoDepthCurrent : 0.0f;
                 const auto cutoff = std::clamp (
-                    static_cast<double> (baseCutoff) * std::exp2 (depth * filterLevel / 12.0),
+                    static_cast<double> (baseCutoff)
+                        * std::exp2 ((depth * filterLevel + lfoOffset) / 12.0),
                     20.0, std::min (20000.0, hostRate * 0.45));
                 const auto resonance = std::isfinite (live.resonance)
                     ? std::clamp (live.resonance, 0.5f, 10.0f) : 0.707f;
@@ -592,6 +638,8 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
         const auto voiceGain = playing.gain * level * envelopeGain * releaseGain * inGain * outGain;
         left[frame] += sampleLeft * voiceGain;
         right[frame] += sampleRight * voiceGain;
+        const auto targetStep = baseStep * (playing.lfo.destination == 1
+                                                ? playing.lfoPitchRatio : 1.0);
         if (std::abs (playing.step - targetStep) > 1.0e-7)
             playing.step += (targetStep - playing.step) * stepSmoothing;
         else
@@ -625,6 +673,13 @@ void SampleEngine::renderRange (juce::AudioBuffer<float>& output, int begin, int
     {
         renderVoice (voices[index], voicePointers[index], output, begin, end, settings);
         renderVoice (fadeTails[index], tailPointers[index], output, begin, end, settings);
+    }
+    for (int pad = 0; pad < padCount; ++pad)
+    {
+        const auto rate = std::isfinite (settings[pad].lfo.rateHz)
+            ? std::clamp (settings[pad].lfo.rateHz, 0.05f, 20.0f) : 1.0f;
+        freeLfoPhases[pad] += (end - begin) * rate / hostRate;
+        freeLfoPhases[pad] -= std::floor (freeLfoPhases[pad]);
     }
 }
 

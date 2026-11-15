@@ -147,6 +147,10 @@ HyperrealAudioProcessorEditor::HyperrealAudioProcessorEditor (HyperrealAudioProc
                    {
                        complete (arguments.size() == 1 && processor.setPadFilter (arguments[0]));
                    })
+                   .withNativeFunction ("setPadLfo", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && processor.setPadLfo (arguments[0]));
+                   })
                    .withNativeFunction ("selectPad", [this] (const auto& arguments, auto complete)
                    {
                        const auto pad = arguments.size() == 1

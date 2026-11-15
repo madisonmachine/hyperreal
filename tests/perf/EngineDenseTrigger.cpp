@@ -96,6 +96,7 @@ int main()
         pad.amplitude = { 0.003f, 0.04f, 0.7f, 0.03f };
         pad.filter = { 1, 4000.0f, 0.8f, 12.0f,
                        { 0.005f, 0.04f, 0.6f, 0.03f } };
+        pad.lfo = { 2, 0, 5.0f, 12.0f, 1 };
     }
     engine.process (audio, midi, settings);
     const auto initialPrivateBytes = privateBytes();

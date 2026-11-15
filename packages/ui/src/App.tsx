@@ -3,6 +3,7 @@ import { audition, cancelLoad, chooseSample, clearPad, copyPad, importDroppedFil
 import WaveformEditor from './WaveformEditor'
 import AmplitudeEditor from './AmplitudeEditor'
 import FilterEditor from './FilterEditor'
+import LfoEditor from './LfoEditor'
 
 const initial: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
@@ -18,7 +19,8 @@ const initial: Snapshot = {
   voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0,
   ampAttack: 0, ampDecay: 0, ampSustain: 1, ampRelease: 0,
   filterMode: 0, filterCutoff: 20000, filterResonance: 0.707, filterDepth: 0,
-  filterAttack: 0, filterDecay: 0, filterSustain: 1, filterRelease: 0
+  filterAttack: 0, filterDecay: 0, filterSustain: 1, filterRelease: 0,
+  lfoDestination: 0, lfoShape: 0, lfoRate: 1, lfoDepth: 0, lfoPhaseMode: 0
 }
 
 export default function App() {
@@ -130,6 +132,10 @@ export default function App() {
     <details className="filter-panel">
       <summary>FILTER / PAD {selectedLabel}</summary>
       <FilterEditor key={selected} snapshot={snapshot} />
+    </details>
+    <details className="lfo-panel">
+      <summary>LFO / PAD {selectedLabel}</summary>
+      <LfoEditor key={selected} snapshot={snapshot} />
     </details>
     {context && <>
       <div className="context-dismiss" onClick={() => { setContext(null); setPending(null) }} />

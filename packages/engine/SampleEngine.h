@@ -32,6 +32,14 @@ public:
         float envelopeDepthSemitones = 0.0f;
         Envelope envelope;
     };
+    struct LfoSettings
+    {
+        int destination = 0; // Off, pitch, cutoff.
+        int shape = 0; // Sine, triangle, square, saw.
+        float rateHz = 1.0f;
+        float depthSemitones = 0.0f;
+        int phaseMode = 0; // Reset per voice, free-running per pad.
+    };
     struct PadPlaybackSettings
     {
         bool gated = false;
@@ -45,6 +53,7 @@ public:
         float fineCents = 0.0f;
         Envelope amplitude;
         FilterSettings filter;
+        LfoSettings lfo;
     };
     using PlaybackSettings = std::array<PadPlaybackSettings, padCount>;
     struct Edit
@@ -143,6 +152,13 @@ private:
         double filterTargetG = 0.0;
         double filterTargetK = 1.0 / 0.707;
         int filterUpdateCountdown = 0;
+        LfoSettings lfo;
+        double lfoPhase = 0.0;
+        float lfoDepthCurrent = 0.0f;
+        float lfoValueCurrent = 0.0f;
+        float lfoValueTarget = 0.0f;
+        int lfoUpdateCountdown = 0;
+        double lfoPitchRatio = 1.0;
     };
 
     static bool readSample (juce::InputStream& input, std::unique_ptr<Sample>& sample,
@@ -204,6 +220,7 @@ private:
     std::array<Voice, maxVoices> fadeTails {};
     std::array<unsigned int, padCount> auditionSeen {};
     std::array<bool, padCount> audiblePads {};
+    std::array<double, padCount> freeLfoPhases {};
     juce::uint64 nextSequence = 1;
     double hostRate = 44100.0;
 };

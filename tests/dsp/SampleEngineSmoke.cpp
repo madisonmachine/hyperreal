@@ -951,6 +951,67 @@ int main()
             std::cerr << "Maximum-resonance filter produced unstable output\n";
             return 76;
         }
+    filterSettings[0].filter.mode = 0;
+    filterSettings[0].lfo = { 1, 2, 5.0f, 12.0f, 0 };
+    filterEngine.prepare (1000.0);
+    filterMidi.clear();
+    filterMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                         static_cast<juce::uint8> (127)), 0);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    std::array<float, 8> resetReference {};
+    for (int index = 0; index < 8; ++index)
+        resetReference[index] = filterAudio.getSample (0, 20 + index);
+    filterEngine.prepare (1000.0);
+    filterMidi.clear();
+    filterMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                         static_cast<juce::uint8> (127)), 100);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    float resetDifference = 0.0f;
+    for (int index = 0; index < 8; ++index)
+        resetDifference += std::abs (filterAudio.getSample (0, 120 + index)
+                                     - resetReference[index]);
+    if (resetDifference > 0.001f)
+    {
+        std::cerr << "Reset-phase pitch LFO depended on note timing\n";
+        return 79;
+    }
+    filterSettings[0].lfo.phaseMode = 1;
+    filterEngine.prepare (1000.0);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    float freeDifference = 0.0f;
+    for (int index = 0; index < 8; ++index)
+        freeDifference += std::abs (filterAudio.getSample (0, 120 + index)
+                                    - resetReference[index]);
+    if (freeDifference < 0.05f)
+    {
+        std::cerr << "Free-running pitch LFO ignored elapsed pad time: "
+                  << freeDifference << " reference " << resetReference[1]
+                  << " free " << filterAudio.getSample (0, 121) << "\n";
+        return 80;
+    }
+    filterSettings[0].filter.mode = 1;
+    filterSettings[0].filter.cutoffHz = 50.0f;
+    filterSettings[0].filter.resonance = 0.707f;
+    filterSettings[0].filter.envelopeDepthSemitones = 0.0f;
+    filterSettings[0].lfo = { 2, 2, 5.0f, 24.0f, 1 };
+    filterEngine.prepare (1000.0);
+    filterMidi.clear();
+    filterMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                         static_cast<juce::uint8> (127)), 0);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    const auto openLfoRms = filterAudio.getRMSLevel (0, 20, 8);
+    filterEngine.prepare (1000.0);
+    filterMidi.clear();
+    filterMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                         static_cast<juce::uint8> (127)), 100);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    const auto closedLfoRms = filterAudio.getRMSLevel (0, 120, 8);
+    if (openLfoRms <= closedLfoRms * 2.0f)
+    {
+        std::cerr << "Cutoff LFO did not follow free-running phase: "
+                  << openLfoRms << ' ' << closedLfoRms << "\n";
+        return 81;
+    }
 
     std::cout << "SampleEngine multi-pad smoke passed\n";
     return 0;

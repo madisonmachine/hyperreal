@@ -122,9 +122,28 @@ int main()
                            && original.setPadFilter (filterSetting (0, "decay", 0.02))
                            && original.setPadFilter (filterSetting (0, "sustain", 0.7))
                            && original.setPadFilter (filterSetting (0, "release", 0.03));
+    const auto lfoSetting = [] (int pad, const char* field, double value)
+    {
+        auto* item = new juce::DynamicObject();
+        item->setProperty ("schemaVersion", 10);
+        item->setProperty ("pad", pad);
+        item->setProperty ("field", field);
+        item->setProperty ("value", value);
+        return juce::var (item);
+    };
+    const auto lfoSet = original.setPadLfo (lfoSetting (0, "destination", 1))
+                        && original.setPadLfo (lfoSetting (0, "shape", 2))
+                        && original.setPadLfo (lfoSetting (0, "rate", 5))
+                        && original.setPadLfo (lfoSetting (0, "depth", 12))
+                        && original.setPadLfo (lfoSetting (0, "phase", 1));
     const auto invalidVoicesAccepted = original.setPadVoiceLimit (setting (0, 0));
     if (! modeSet || ! chokeSet || ! muteSet || ! soloSet || ! voicesSet || ! velocitySet
-        || ! coarseSet || ! fineSet || ! amplitudeSet || ! filterSet
+        || ! coarseSet || ! fineSet || ! amplitudeSet || ! filterSet || ! lfoSet
+        || original.setPadLfo (lfoSetting (0, "destination", 3))
+        || original.setPadLfo (lfoSetting (0, "shape", 1.5))
+        || original.setPadLfo (lfoSetting (0, "rate", 0))
+        || original.setPadLfo (lfoSetting (0, "depth", 25))
+        || original.setPadLfo (lfoSetting (0, "unknown", 1))
         || original.setPadFilter (filterSetting (0, "mode", 1.5))
         || original.setPadFilter (filterSetting (0, "cutoff", 20001))
         || original.setPadFilter (filterSetting (0, "resonance", 0.1))
@@ -215,7 +234,7 @@ int main()
     {
         const auto id = phase6Parameters.getChild (child).getProperty ("id").toString();
         if (id.contains (".coarse.") || id.contains (".fine.")
-            || id.contains (".amp.") || id.contains (".filter."))
+            || id.contains (".amp.") || id.contains (".filter.") || id.contains (".lfo."))
             phase6Parameters.removeChild (child, nullptr);
     }
     auto phase5Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
@@ -226,7 +245,7 @@ int main()
         const auto id = phase5Parameters.getChild (child).getProperty ("id").toString();
         if (id.contains (".voices.") || id.contains (".velocity.")
             || id.contains (".coarse.") || id.contains (".fine.")
-            || id.contains (".amp.") || id.contains (".filter."))
+            || id.contains (".amp.") || id.contains (".filter.") || id.contains (".lfo."))
             phase5Parameters.removeChild (child, nullptr);
     }
     auto phase4Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
@@ -238,7 +257,7 @@ int main()
         if (id.contains (".mute.") || id.contains (".solo.")
             || id.contains (".voices.") || id.contains (".velocity.")
             || id.contains (".coarse.") || id.contains (".fine.")
-            || id.contains (".amp.") || id.contains (".filter."))
+            || id.contains (".amp.") || id.contains (".filter.") || id.contains (".lfo."))
             phase4Parameters.removeChild (child, nullptr);
     }
     auto makePreviousState = [&legacySamples] (const juce::ValueTree& tree,
@@ -261,7 +280,8 @@ int main()
     phase7Parameters.setProperty ("schema_version", 7, nullptr);
     for (int child = phase7Parameters.getNumChildren() - 1; child >= 0; --child)
         if (phase7Parameters.getChild (child).getProperty ("id").toString().contains (".amp.")
-            || phase7Parameters.getChild (child).getProperty ("id").toString().contains (".filter."))
+            || phase7Parameters.getChild (child).getProperty ("id").toString().contains (".filter.")
+            || phase7Parameters.getChild (child).getProperty ("id").toString().contains (".lfo."))
             phase7Parameters.removeChild (child, nullptr);
     juce::MemoryBlock phase7State;
     {
@@ -279,7 +299,8 @@ int main()
                                                            parameterBytes.getSize());
     phase8Parameters.setProperty ("schema_version", 8, nullptr);
     for (int child = phase8Parameters.getNumChildren() - 1; child >= 0; --child)
-        if (phase8Parameters.getChild (child).getProperty ("id").toString().contains (".filter."))
+        if (phase8Parameters.getChild (child).getProperty ("id").toString().contains (".filter.")
+            || phase8Parameters.getChild (child).getProperty ("id").toString().contains (".lfo."))
             phase8Parameters.removeChild (child, nullptr);
     juce::MemoryBlock phase8State;
     {
@@ -291,6 +312,24 @@ int main()
         output.writeInt (8);
         output.writeInt (static_cast<int> (phase8ParameterBytes.getSize()));
         output.write (phase8ParameterBytes.getData(), phase8ParameterBytes.getSize());
+        output.write (phase7Samples.getData(), phase7Samples.getSize());
+    }
+    auto phase9Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
+                                                           parameterBytes.getSize());
+    phase9Parameters.setProperty ("schema_version", 9, nullptr);
+    for (int child = phase9Parameters.getNumChildren() - 1; child >= 0; --child)
+        if (phase9Parameters.getChild (child).getProperty ("id").toString().contains (".lfo."))
+            phase9Parameters.removeChild (child, nullptr);
+    juce::MemoryBlock phase9State;
+    {
+        juce::MemoryBlock phase9ParameterBytes;
+        juce::MemoryOutputStream parametersOutput (phase9ParameterBytes, false);
+        phase9Parameters.writeToStream (parametersOutput);
+        juce::MemoryOutputStream output (phase9State, false);
+        output.write ("HRP9", 4);
+        output.writeInt (9);
+        output.writeInt (static_cast<int> (phase9ParameterBytes.getSize()));
+        output.write (phase9ParameterBytes.getData(), phase9ParameterBytes.getSize());
         output.write (phase7Samples.getData(), phase7Samples.getSize());
     }
     const auto phase6State = makePreviousState (phase6Parameters, "HRP6", 6);
@@ -306,7 +345,7 @@ int main()
             || id.contains (".mute.") || id.contains (".solo.")
             || id.contains (".voices.") || id.contains (".velocity.")
             || id.contains (".coarse.") || id.contains (".fine.")
-            || id.contains (".amp.") || id.contains (".filter."))
+            || id.contains (".amp.") || id.contains (".filter.") || id.contains (".lfo."))
             phase3Parameters.removeChild (child, nullptr);
     }
     const auto phase3State = makePreviousState (phase3Parameters, "HRP3", 3);
@@ -320,7 +359,7 @@ int main()
             || id.contains (".mute.") || id.contains (".solo.")
             || id.contains (".voices.") || id.contains (".velocity.")
             || id.contains (".coarse.") || id.contains (".fine.")
-            || id.contains (".amp.") || id.contains (".filter."))
+            || id.contains (".amp.") || id.contains (".filter.") || id.contains (".lfo."))
             phase2Parameters.removeChild (child, nullptr);
     }
     juce::MemoryBlock phase2ParameterBytes;
@@ -366,6 +405,11 @@ int main()
         || std::abs (static_cast<double> (snapshot.getProperty ("filterResonance", -1.0)) - 0.8) > 0.02
         || std::abs (static_cast<double> (snapshot.getProperty ("filterDepth", -100.0)) - 12.0) > 0.11
         || std::abs (static_cast<double> (snapshot.getProperty ("filterSustain", -1.0)) - 0.7) > 0.001
+        || static_cast<int> (snapshot.getProperty ("lfoDestination", -1)) != 1
+        || static_cast<int> (snapshot.getProperty ("lfoShape", -1)) != 2
+        || std::abs (static_cast<double> (snapshot.getProperty ("lfoRate", -1.0)) - 5.0) > 0.1
+        || std::abs (static_cast<double> (snapshot.getProperty ("lfoDepth", -1.0)) - 12.0) > 0.1
+        || static_cast<int> (snapshot.getProperty ("lfoPhaseMode", -1)) != 1
         || static_cast<int> (snapshot.getProperty ("trimStart", -1)) != 100
         || static_cast<int> (snapshot.getProperty ("trimEnd", -1)) != 4000
         || ! static_cast<bool> (snapshot.getProperty ("reverse", false))
@@ -478,6 +522,17 @@ int main()
         std::cerr << "Phase 8 project migration failed\n";
         return 1;
     }
+    HyperrealAudioProcessor phase9Migrated;
+    phase9Migrated.setStateInformation (phase9State.getData(), static_cast<int> (phase9State.getSize()));
+    const auto phase9Snapshot = phase9Migrated.getSnapshot();
+    if (phase9Snapshot.getProperty ("status", {}).toString() != "ready"
+        || static_cast<int> (phase9Snapshot.getProperty ("filterMode", -1)) != 1
+        || static_cast<int> (phase9Snapshot.getProperty ("lfoDestination", -1)) != 0
+        || std::abs (static_cast<double> (phase9Snapshot.getProperty ("lfoRate", -1.0)) - 1.0) > 0.1)
+    {
+        std::cerr << "Phase 9 project migration failed\n";
+        return 1;
+    }
 
     HyperrealAudioProcessor operations;
     operations.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
@@ -494,6 +549,9 @@ int main()
             operations.getSnapshot().getProperty ("ampSustain", -1.0)) - 0.6) > 0.001
         || std::abs (static_cast<double> (
             operations.getSnapshot().getProperty ("filterDepth", -100.0)) - 12.0) > 0.11
+        || static_cast<int> (operations.getSnapshot().getProperty ("lfoDestination", -1)) != 1
+        || static_cast<int> (operations.getSnapshot().getProperty ("lfoShape", -1)) != 2
+        || static_cast<int> (operations.getSnapshot().getProperty ("lfoPhaseMode", -1)) != 1
         || ! static_cast<bool> (operations.getSnapshot().getProperty ("muted", false)))
     {
         std::cerr << "Pad paste did not copy sample and settings\n";
@@ -521,7 +579,8 @@ int main()
         || static_cast<int> (operations.getSnapshot().getProperty ("velocityCurve", -1)) != 1
         || std::abs (static_cast<double> (
             operations.getSnapshot().getProperty ("ampSustain", -1.0)) - 1.0) > 0.001
-        || static_cast<int> (operations.getSnapshot().getProperty ("filterMode", -1)) != 0)
+        || static_cast<int> (operations.getSnapshot().getProperty ("filterMode", -1)) != 0
+        || static_cast<int> (operations.getSnapshot().getProperty ("lfoDestination", -1)) != 0)
     {
         std::cerr << "Pad clear did not reset sample and settings\n";
         return 1;

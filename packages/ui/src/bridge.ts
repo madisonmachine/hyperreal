@@ -42,6 +42,11 @@ export type Snapshot = {
   filterDecay: number
   filterSustain: number
   filterRelease: number
+  lfoDestination: number
+  lfoShape: number
+  lfoRate: number
+  lfoDepth: number
+  lfoPhaseMode: number
 }
 export type Waveform = { schemaVersion: number; pad: number; level: number; sampleRevision: number; minimum: number[]; maximum: number[] }
 const demo: Snapshot = {
@@ -57,7 +62,8 @@ const demo: Snapshot = {
   clipboardReady: false, voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0,
   ampAttack: 0, ampDecay: 0, ampSustain: 1, ampRelease: 0,
   filterMode: 0, filterCutoff: 20000, filterResonance: 0.707, filterDepth: 0,
-  filterAttack: 0, filterDecay: 0, filterSustain: 1, filterRelease: 0
+  filterAttack: 0, filterDecay: 0, filterSustain: 1, filterRelease: 0,
+  lfoDestination: 0, lfoShape: 0, lfoRate: 1, lfoDepth: 0, lfoPhaseMode: 0
 }
 const nativeAvailable = () => Boolean((window as Window & { __JUCE__?: unknown }).__JUCE__)
 export async function readSnapshot(): Promise<Snapshot> {
@@ -80,6 +86,9 @@ export async function setPadAmplitude(pad: number, field: 'attack'|'decay'|'sust
 }
 export async function setPadFilter(pad: number, field: 'mode'|'cutoff'|'resonance'|'depth'|'attack'|'decay'|'sustain'|'release', value: number): Promise<boolean> {
   return nativeAvailable() ? Boolean(await getNativeFunction('setPadFilter')({ schemaVersion: 9, pad, field, value })) : false
+}
+export async function setPadLfo(pad: number, field: 'destination'|'shape'|'rate'|'depth'|'phase', value: number): Promise<boolean> {
+  return nativeAvailable() ? Boolean(await getNativeFunction('setPadLfo')({ schemaVersion: 10, pad, field, value })) : false
 }
 export async function chooseSample(pad: number): Promise<void> {
   if (nativeAvailable()) await getNativeFunction('chooseSample')({ schemaVersion: 2, pad })
