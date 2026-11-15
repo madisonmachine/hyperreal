@@ -89,12 +89,12 @@ export default function App() {
   return <main className="chassis"
     onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }}
     onDrop={event => { event.preventDefault(); handleDroppedFile(selected, event.dataTransfer.files[0]) }}>
-    <header><div><strong>HYPERREAL</strong><small>16 PAD DRUM SAMPLER</small></div><span>PHASE 5 DEVELOPMENT</span></header>
+    <header><strong>HYPERREAL</strong></header>
     <section className="display">
       <div className="display-row"><span>PAD {selectedLabel} / MIDI {selected + 36}</span><span>{snapshot.status.toUpperCase()}</span></div>
       <h1>{snapshot.sampleName || 'NO SAMPLE LOADED'}</h1>
-      <div className="display-row"><span>{snapshot.sampleRate ? (snapshot.sampleRate/1000).toFixed(1)+' KHZ' : '-- KHZ'}</span><span>{snapshot.durationSeconds ? snapshot.durationSeconds.toFixed(2)+' SEC' : '-- SEC'}</span></div>
-      <p>{snapshot.message || 'RIGHT-CLICK A PAD TO LOAD A SAMPLE, OR DROP A FILE ON IT'}</p>
+      {(snapshot.status === 'error' || snapshot.status === 'loading') && snapshot.message &&
+        <p className="display-notice" role="status">{snapshot.message}</p>}
       {snapshot.status === 'loading' && <button className="cancel-load" onClick={() => void cancelLoad(selected)}>CANCEL LOAD</button>}
       <div className="display-tabs" role="tablist" aria-label="Selected pad editing">
         {([['waveform', 'WAVEFORM'], ['amp', 'AMP ENVELOPE'], ['filter', 'FILTER'], ['lfo', 'LFO']] as const)

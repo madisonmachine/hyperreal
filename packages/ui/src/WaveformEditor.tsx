@@ -228,7 +228,7 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
     if (!element) return
     const ratio = window.devicePixelRatio || 1
     const width = Math.max(1, element.clientWidth)
-    const height = 156
+    const height = 116
     element.width = Math.round(width * ratio)
     element.height = Math.round(height * ratio)
     const context = element.getContext('2d')
@@ -263,7 +263,7 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
     if (!element) return
     const ratio = window.devicePixelRatio || 1
     const width = Math.max(1, element.clientWidth)
-    const height = 160
+    const height = 116
     element.width = Math.round(width * ratio)
     element.height = Math.round(height * ratio)
     const context = element.getContext('2d')
@@ -417,45 +417,49 @@ export default function WaveformEditor({ snapshot }: { snapshot: Snapshot }) {
     ? ((draft.endFrame - draft.startFrame) / rate / Math.pow(2, tuneSemitones / 12)).toFixed(4)
     : '--'
   return <div className="wave-editor">
-    <div className="wave-canvas-wrap">
-      <canvas ref={canvas} className="wave-canvas" aria-label="Sample waveform: drag fade tips at the top or trim markers below; edits apply immediately"
-        onPointerDown={pointerDown}
-        onPointerMove={event => { if (dragging.current) moveMarker(dragging.current, positionFromPointer(event)) }}
-        onPointerUp={finishDrag} onPointerCancel={cancelDrag}
-        onLostPointerCapture={cancelDrag} />
-      <canvas ref={cursorCanvas} className="wave-cursor" aria-hidden="true" />
+    <div className="wave-main">
+      <div className="wave-visual">
+        <div className="wave-canvas-wrap">
+          <canvas ref={canvas} className="wave-canvas" aria-label="Sample waveform: drag fade tips at the top or trim markers below; edits apply immediately"
+            onPointerDown={pointerDown}
+            onPointerMove={event => { if (dragging.current) moveMarker(dragging.current, positionFromPointer(event)) }}
+            onPointerUp={finishDrag} onPointerCancel={cancelDrag}
+            onLostPointerCapture={cancelDrag} />
+          <canvas ref={cursorCanvas} className="wave-cursor" aria-hidden="true" />
+        </div>
+        <div className="wave-readout"><span>START {seconds(draft.startFrame)} S</span><span>END {seconds(draft.endFrame)} S</span></div>
+        <div className="wave-readout"><span>{frames} FRAMES</span><span>PLAYBACK ~{playbackSeconds} S</span></div>
+      </div>
+      <div className="wave-frame-controls">
+        <RotaryControl label="START" value={draft.startFrame} min={0} max={draft.endFrame - 1} step={1}
+          onChange={value => changeEdit(edit => ({ ...edit, startFrame: value }))}
+          format={value => `${value} fr`} />
+        <RotaryControl label="END" value={draft.endFrame} min={draft.startFrame + 1} max={frames} step={1}
+          onChange={value => changeEdit(edit => ({ ...edit, endFrame: value }))}
+          format={value => `${value} fr`} />
+        <RotaryControl label="FADE IN" value={draft.fadeInFrames} min={0}
+          max={draft.endFrame - draft.startFrame} step={1}
+          onChange={value => changeEdit(edit => ({ ...edit, fadeInFrames: value }))}
+          format={value => `${value} fr`} />
+        <RotaryControl label="FADE OUT" value={draft.fadeOutFrames} min={0}
+          max={draft.endFrame - draft.startFrame} step={1}
+          onChange={value => changeEdit(edit => ({ ...edit, fadeOutFrames: value }))}
+          format={value => `${value} fr`} />
+      </div>
     </div>
-    <div className="wave-readout"><span>START {seconds(draft.startFrame)} S</span><span>END {seconds(draft.endFrame)} S</span><span>{frames} SOURCE FRAMES</span></div>
-    <div className="wave-readout"><span>PLAYBACK ~{playbackSeconds} S</span><span>RAW TRACE DIM / EDIT PREVIEW BRIGHT</span></div>
-    <div className="wave-controls">
-      <RotaryControl label="START" value={draft.startFrame} min={0} max={draft.endFrame - 1} step={1}
-        onChange={value => changeEdit(edit => ({ ...edit, startFrame: value }))}
-        format={value => `${value} fr`} />
-      <RotaryControl label="END" value={draft.endFrame} min={draft.startFrame + 1} max={frames} step={1}
-        onChange={value => changeEdit(edit => ({ ...edit, endFrame: value }))}
-        format={value => `${value} fr`} />
-      <RotaryControl label="FADE IN" value={draft.fadeInFrames} min={0}
-        max={draft.endFrame - draft.startFrame} step={1}
-        onChange={value => changeEdit(edit => ({ ...edit, fadeInFrames: value }))}
-        format={value => `${value} fr`} />
-      <RotaryControl label="FADE OUT" value={draft.fadeOutFrames} min={0}
-        max={draft.endFrame - draft.startFrame} step={1}
-        onChange={value => changeEdit(edit => ({ ...edit, fadeOutFrames: value }))}
-        format={value => `${value} fr`} />
-      <label><input type="checkbox" checked={draft.reversed}
-        onChange={event => changeEdit(current => ({ ...current, reversed: event.target.checked }))} /> REVERSE</label>
+    <div className="wave-bottom-controls" aria-label="Waveform view and pad tuning">
       <RotaryControl label="ZOOM" value={[1, 2, 4, 8].indexOf(zoom)} min={0} max={3} step={1}
         onChange={value => { setZoom([1, 2, 4, 8][value]); setView(0) }}
         format={value => `${[1, 2, 4, 8][value]}x`} />
       {zoom > 1 && <RotaryControl label="VIEW" value={view} min={0} max={1} step={0.001}
         onChange={setView} format={value => `${Math.round(value * 100)}%`} />}
-    </div>
-    <div className="wave-controls" aria-label="Pad tuning">
       <RotaryControl label="COARSE" value={coarse} min={-24} max={24} step={1}
         onChange={value => changeTune('coarse', value)} format={value => `${value} st`} />
       <RotaryControl label="FINE" value={fine} min={-100} max={100} step={0.1}
         onChange={value => changeTune('fine', value)} format={value => `${value.toFixed(1)} ct`} />
-      <button onClick={snapTune}>SNAP TO SEMITONE</button>
+      <label className="wave-reverse"><input type="checkbox" checked={draft.reversed}
+        onChange={event => changeEdit(current => ({ ...current, reversed: event.target.checked }))} /> REVERSE</label>
+      <button onClick={snapTune}>SEMITONE SNAP</button>
     </div>
     {error && <p className="operation-error" role="alert">{error}</p>}
   </div>
