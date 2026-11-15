@@ -276,6 +276,20 @@ void SampleEngine::beginRelease (Voice& playing) noexcept
     playing.releaseRemaining = playing.releaseTotal;
 }
 
+void SampleEngine::beginEnvelopeRelease (Voice& playing, int maximumFrames) noexcept
+{
+    if (playing.sample == nullptr || playing.envelopeReleased)
+        return;
+    playing.noteHeld = false;
+    playing.envelopeReleased = true;
+    playing.envelopeReleaseStart = playing.envelopeLevel;
+    const auto seconds = std::max (0.005f, playing.amplitude.releaseSeconds);
+    playing.envelopeReleaseTotal = std::max (1, static_cast<int> (hostRate * seconds));
+    if (maximumFrames > 0)
+        playing.envelopeReleaseTotal = std::min (playing.envelopeReleaseTotal, maximumFrames);
+    playing.envelopeReleaseRemaining = playing.envelopeReleaseTotal;
+}
+
 void SampleEngine::noteOff (int pad, int midiChannel) noexcept
 {
     Voice* oldestHeld = nullptr;
@@ -286,7 +300,7 @@ void SampleEngine::noteOff (int pad, int midiChannel) noexcept
             && (oldestHeld == nullptr || playing.sequence < oldestHeld->sequence))
             oldestHeld = &playing;
     if (oldestHeld != nullptr)
-        beginRelease (*oldestHeld);
+        beginEnvelopeRelease (*oldestHeld);
 }
 
 void SampleEngine::releaseAll (int midiChannel) noexcept
@@ -372,6 +386,18 @@ void SampleEngine::startVoice (int pad, float velocity, bool audition,
                                    : normalizedVelocity;
     voices[chosen] = { sample, 0.0, gain,
                        pad, midiChannel, nextSequence++, gated, gated, group, 0, 0 };
+    const auto valid = [] (float value, float fallback, float maximum)
+    {
+        return std::isfinite (value) ? std::clamp (value, 0.0f, maximum) : fallback;
+    };
+    auto& playing = voices[chosen];
+    playing.amplitude = {
+        valid (settings[pad].amplitude.attackSeconds, 0.0f, 10.0f),
+        valid (settings[pad].amplitude.decaySeconds, 0.0f, 10.0f),
+        valid (settings[pad].amplitude.sustain, 1.0f, 1.0f),
+        valid (settings[pad].amplitude.releaseSeconds, 0.0f, 10.0f)
+    };
+    playing.envelopeLevel = playing.amplitude.attackSeconds > 0.0f ? 0.0f : 1.0f;
     voicePointers[chosen].store (sample);
 }
 
@@ -400,6 +426,8 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
     const auto fadeInInverse = edit.fadeInFrames > 0 ? 1.0 / edit.fadeInFrames : 0.0;
     const auto fadeOutStart = regionFrames - 1 - edit.fadeOutFrames;
     const auto fadeOutInverse = edit.fadeOutFrames > 0 ? 1.0 / edit.fadeOutFrames : 0.0;
+    const auto attackFrames = static_cast<juce::uint64> (hostRate * playing.amplitude.attackSeconds);
+    const auto decayFrames = static_cast<juce::uint64> (hostRate * playing.amplitude.decaySeconds);
     for (int frame = begin; frame < end; ++frame)
     {
         if (playing.position >= regionFrames)
@@ -415,6 +443,29 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
                                        edit.startFrame, edit.endFrame - 1);
         const auto next = std::min (index + 1, edit.endFrame - 1);
         const auto fraction = static_cast<float> (std::max (0.0, sourcePosition - index));
+        float envelopeGain = playing.amplitude.sustain;
+        if (! playing.envelopeReleased && playing.envelopeAge < attackFrames)
+            envelopeGain = static_cast<float> (playing.envelopeAge + 1) / attackFrames;
+        else if (! playing.envelopeReleased
+                 && playing.envelopeAge < attackFrames + decayFrames)
+            envelopeGain = 1.0f + (playing.amplitude.sustain - 1.0f)
+                * static_cast<float> (playing.envelopeAge - attackFrames + 1) / decayFrames;
+        playing.envelopeLevel = envelopeGain;
+        if (! playing.gated && ! playing.envelopeReleased
+            && playing.amplitude.releaseSeconds > 0.0f)
+        {
+            const auto remainingSourceFrames = regionFrames - playing.position;
+            if (remainingSourceFrames <= playing.step * hostRate
+                                         * playing.amplitude.releaseSeconds)
+                beginEnvelopeRelease (playing, std::max (1, static_cast<int> (
+                    std::ceil (remainingSourceFrames / std::max (playing.step, 1.0e-9)))));
+        }
+        if (playing.envelopeReleased)
+            envelopeGain = playing.envelopeReleaseStart
+                * static_cast<float> (playing.envelopeReleaseRemaining)
+                / playing.envelopeReleaseTotal;
+        playing.envelopeLevel = envelopeGain;
+        ++playing.envelopeAge;
         const auto releaseGain = playing.releaseRemaining > 0
             ? static_cast<float> (playing.releaseRemaining) / playing.releaseTotal : 1.0f;
         const auto inGain = edit.fadeInFrames == 0 ? 1.0f
@@ -423,9 +474,9 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
             : static_cast<float> (std::max (0.0,
                 (static_cast<double> (regionFrames - 1) - playing.position) * fadeOutInverse));
         left[frame] += (sourceLeft[index] + (sourceLeft[next] - sourceLeft[index]) * fraction)
-                       * playing.gain * level * releaseGain * inGain * outGain;
+                       * playing.gain * level * envelopeGain * releaseGain * inGain * outGain;
         right[frame] += (sourceRight[index] + (sourceRight[next] - sourceRight[index]) * fraction)
-                        * playing.gain * level * releaseGain * inGain * outGain;
+                        * playing.gain * level * envelopeGain * releaseGain * inGain * outGain;
         if (std::abs (playing.step - targetStep) > 1.0e-7)
             playing.step += (targetStep - playing.step) * stepSmoothing;
         else
@@ -438,6 +489,12 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
             break;
         }
         if (playing.releaseRemaining > 0 && --playing.releaseRemaining == 0)
+        {
+            playing.sample = nullptr;
+            pointer.store (nullptr);
+            break;
+        }
+        if (playing.envelopeReleased && --playing.envelopeReleaseRemaining == 0)
         {
             playing.sample = nullptr;
             pointer.store (nullptr);

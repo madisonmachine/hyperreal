@@ -775,6 +775,54 @@ int main()
     fastSource.deleteFile();
     ramp.deleteFile();
 
+    SampleEngine envelopeEngine;
+    envelopeEngine.prepare (1000.0);
+    const auto envelopeSource = folder.getChildFile ("hyperreal-phase5-envelope.wav");
+    writeWav (envelopeSource, 6553);
+    envelopeEngine.requestLoad (0, envelopeSource);
+    if (! waitForReady (envelopeEngine, 0)
+        || ! envelopeEngine.setPadEdit (0, { 0, 4410, 0, 0, false }))
+        return 67;
+    envelopeSource.deleteFile();
+    SampleEngine::PlaybackSettings envelopeSettings {};
+    envelopeSettings[0].amplitude = { 0.01f, 0.01f, 0.5f, 0.02f };
+    juce::AudioBuffer<float> envelopeAudio (2, 128);
+    juce::MidiBuffer envelopeMidi;
+    envelopeMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                           static_cast<juce::uint8> (127)), 0);
+    envelopeEngine.process (envelopeAudio, envelopeMidi, envelopeSettings);
+    if (! near (envelopeAudio.getSample (0, 0), 0.02f)
+        || ! near (envelopeAudio.getSample (0, 9), 0.2f)
+        || ! near (envelopeAudio.getSample (0, 19), 0.1f)
+        || ! near (envelopeAudio.getSample (0, 40), 0.1f)
+        || envelopeAudio.getSample (0, 90) >= 0.08f
+        || ! near (envelopeAudio.getSample (0, 110), 0.0f))
+    {
+        std::cerr << "One-shot amplitude ADSR stages failed\n";
+        return 68;
+    }
+    envelopeEngine.prepare (1000.0);
+    envelopeSettings[0].amplitude.releaseSeconds = 0.2f;
+    envelopeEngine.process (envelopeAudio, envelopeMidi, envelopeSettings);
+    if (envelopeAudio.getSample (0, 95) >= 0.02f
+        || ! near (envelopeAudio.getSample (0, 110), 0.0f))
+    {
+        std::cerr << "Long release exceeded a short one-shot sample\n";
+        return 70;
+    }
+    envelopeEngine.prepare (1000.0);
+    envelopeSettings[0].gated = true;
+    envelopeSettings[0].amplitude.releaseSeconds = 0.02f;
+    envelopeMidi.addEvent (juce::MidiMessage::noteOff (1, 36), 40);
+    envelopeEngine.process (envelopeAudio, envelopeMidi, envelopeSettings);
+    if (! near (envelopeAudio.getSample (0, 39), 0.1f)
+        || envelopeAudio.getSample (0, 50) >= 0.08f
+        || ! near (envelopeAudio.getSample (0, 70), 0.0f))
+    {
+        std::cerr << "Gated amplitude ADSR release failed\n";
+        return 69;
+    }
+
     std::cout << "SampleEngine multi-pad smoke passed\n";
     return 0;
 }

@@ -91,6 +91,8 @@ int main()
         midi.addEvent (juce::MidiMessage::noteOn (
             1, SampleEngine::firstMidiNote + pad, static_cast<juce::uint8> (100)), pad * 8);
     SampleEngine::PlaybackSettings settings {};
+    for (auto& pad : settings)
+        pad.amplitude = { 0.003f, 0.04f, 0.7f, 0.03f };
     engine.process (audio, midi, settings);
     const auto initialPrivateBytes = privateBytes();
     constexpr int blocks = 100000;

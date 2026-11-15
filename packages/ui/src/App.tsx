@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { audition, cancelLoad, chooseSample, clearPad, copyPad, importDroppedFile, pastePad, readSnapshot, selectPad, setChokeGroup, setMasterGain, setPadMode, setPadMute, setPadSolo, setVelocityCurve, setVoiceLimit, swapPads, type Snapshot } from './bridge'
 import WaveformEditor from './WaveformEditor'
+import AmplitudeEditor from './AmplitudeEditor'
 
 const initial: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
@@ -13,7 +14,8 @@ const initial: Snapshot = {
   reverse: false, playbackFrame: -1, playbackSpeed: 0,
   masterGain: 1, padLevel: 1, padMode: 0, chokeGroup: 0,
   muted: false, solo: false, clipboardReady: false,
-  voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0
+  voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0,
+  ampAttack: 0, ampDecay: 0, ampSustain: 1, ampRelease: 0
 }
 
 export default function App() {
@@ -82,7 +84,7 @@ export default function App() {
   return <main className="chassis"
     onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }}
     onDrop={event => { event.preventDefault(); handleDroppedFile(selected, event.dataTransfer.files[0]) }}>
-    <header><div><strong>HYPERREAL</strong><small>16 PAD DRUM SAMPLER</small></div><span>PHASE 4 DEVELOPMENT</span></header>
+    <header><div><strong>HYPERREAL</strong><small>16 PAD DRUM SAMPLER</small></div><span>PHASE 5 DEVELOPMENT</span></header>
     <section className="display" aria-live="polite">
       <div className="display-row"><span>PAD {selectedLabel} / MIDI {selected + 36}</span><span>{snapshot.status.toUpperCase()}</span></div>
       <h1>{snapshot.sampleName || 'NO SAMPLE LOADED'}</h1>
@@ -117,6 +119,10 @@ export default function App() {
       </button>)}</section>
     <details className="waveform-panel" onToggle={event => setWaveformOpen(event.currentTarget.open)}>
       <summary>WAVEFORM / SAMPLE EDIT</summary>{waveformOpen && <WaveformEditor key={snapshot.selectedPad} snapshot={snapshot} />}
+    </details>
+    <details className="amplitude-panel">
+      <summary>AMPLITUDE ENVELOPE / PAD {selectedLabel}</summary>
+      <AmplitudeEditor key={selected} snapshot={snapshot} />
     </details>
     {context && <>
       <div className="context-dismiss" onClick={() => { setContext(null); setPending(null) }} />

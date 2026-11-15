@@ -17,6 +17,13 @@ public:
     static constexpr int padCount = 16;
     static constexpr int firstMidiNote = 36;
     static constexpr int maxVoices = 64;
+    struct Envelope
+    {
+        float attackSeconds = 0.0f;
+        float decaySeconds = 0.0f;
+        float sustain = 1.0f;
+        float releaseSeconds = 0.0f;
+    };
     struct PadPlaybackSettings
     {
         bool gated = false;
@@ -28,6 +35,7 @@ public:
         int velocityCurve = 1;
         int coarseSemitones = 0;
         float fineCents = 0.0f;
+        Envelope amplitude;
     };
     using PlaybackSettings = std::array<PadPlaybackSettings, padCount>;
     struct Edit
@@ -105,6 +113,13 @@ private:
         int releaseRemaining = 0;
         int releaseTotal = 0;
         double step = 0.0;
+        Envelope amplitude;
+        juce::uint64 envelopeAge = 0;
+        int envelopeReleaseRemaining = 0;
+        int envelopeReleaseTotal = 0;
+        float envelopeReleaseStart = 1.0f;
+        float envelopeLevel = 1.0f;
+        bool envelopeReleased = false;
     };
 
     static bool readSample (juce::InputStream& input, std::unique_ptr<Sample>& sample,
@@ -121,6 +136,7 @@ private:
     void noteOff (int pad, int midiChannel) noexcept;
     void releaseAll (int midiChannel = 0) noexcept;
     void beginRelease (Voice& voice) noexcept;
+    void beginEnvelopeRelease (Voice& voice, int maximumFrames = 0) noexcept;
     void renderVoice (Voice& voice, std::atomic<const Sample*>& pointer,
                       juce::AudioBuffer<float>& output, int begin, int end,
                       const PlaybackSettings& settings) noexcept;

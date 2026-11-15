@@ -51,6 +51,7 @@ public:
     bool setPadEdit (const juce::var& command);
     bool setPadCoarseTune (const juce::var& command);
     bool setPadFineTune (const juce::var& command);
+    bool setPadAmplitude (const juce::var& command);
     bool copyPad (int pad);
     bool pastePad (int pad);
     bool swapPads (int first, int second);
@@ -61,8 +62,8 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     bool setPadDiscreteParameter (const juce::var& command, const char* name,
                                   int maximum, int minimum = 0);
-    std::array<float, 9> readPadSettings (int pad) const;
-    void applyPadSettings (int pad, const std::array<float, 9>& values);
+    std::array<float, 13> readPadSettings (int pad) const;
+    void applyPadSettings (int pad, const std::array<float, 13>& values);
 
     juce::AudioProcessorValueTreeState parameters;
     SampleEngine engine;
@@ -75,7 +76,9 @@ private:
     std::array<std::atomic<float>*, SampleEngine::padCount> padVelocityCurveParameters {};
     std::array<std::atomic<float>*, SampleEngine::padCount> padCoarseTuneParameters {};
     std::array<std::atomic<float>*, SampleEngine::padCount> padFineTuneParameters {};
-    std::array<float, 9> clipboardSettings { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 4.0f, 1.0f, 0.0f, 0.0f };
+    std::array<std::array<std::atomic<float>*, 4>, SampleEngine::padCount> padAmplitudeParameters {};
+    std::array<float, 13> clipboardSettings { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 4.0f, 1.0f, 0.0f, 0.0f,
+                                               0.0f, 0.0f, 1.0f, 0.0f };
     bool clipboardSettingsReady = false;
     std::atomic<int> selectedPad { 0 };
     std::array<std::atomic<unsigned int>, SampleEngine::padCount> padClickCounters {};

@@ -7,9 +7,10 @@
 
 namespace
 {
-constexpr int stateSchemaVersion = 7;
+constexpr int stateSchemaVersion = 8;
 constexpr int padCount = 16;
-constexpr char stateMagic[] = { 'H', 'R', 'P', '7' };
+constexpr char stateMagic[] = { 'H', 'R', 'P', '8' };
+constexpr char phase7Magic[] = { 'H', 'R', 'P', '7' };
 constexpr char phase6Magic[] = { 'H', 'R', 'P', '6' };
 constexpr char phase5Magic[] = { 'H', 'R', 'P', '5' };
 constexpr char phase4Magic[] = { 'H', 'R', 'P', '4' };
@@ -42,6 +43,11 @@ HyperrealAudioProcessor::HyperrealAudioProcessor()
             juce::String::formatted ("pad.%02d.coarse.v1", number));
         padFineTuneParameters[pad] = parameters.getRawParameterValue (
             juce::String::formatted ("pad.%02d.fine.v1", number));
+        constexpr const char* amplitudeNames[] { "attack", "decay", "sustain", "release" };
+        for (int stage = 0; stage < 4; ++stage)
+            padAmplitudeParameters[pad][stage] = parameters.getRawParameterValue (
+                juce::String::formatted ("pad.%02d.amp.", number)
+                + amplitudeNames[stage] + ".v1");
     }
 }
 
@@ -84,6 +90,10 @@ void HyperrealAudioProcessor::processBlock (juce::AudioBuffer<float>& audio, juc
         playback[pad].velocityCurve = static_cast<int> (padVelocityCurveParameters[pad]->load());
         playback[pad].coarseSemitones = static_cast<int> (padCoarseTuneParameters[pad]->load());
         playback[pad].fineCents = padFineTuneParameters[pad]->load();
+        playback[pad].amplitude = {
+            padAmplitudeParameters[pad][0]->load(), padAmplitudeParameters[pad][1]->load(),
+            padAmplitudeParameters[pad][2]->load(), padAmplitudeParameters[pad][3]->load()
+        };
     }
     engine.process (audio, midi, playback);
     // The instrument track's input has already been consumed by the engine.
@@ -145,6 +155,10 @@ juce::var HyperrealAudioProcessor::getSnapshot() const
     snapshot.getDynamicObject()->setProperty ("velocityCurve", static_cast<int> (padVelocityCurveParameters[pad]->load()));
     snapshot.getDynamicObject()->setProperty ("coarseTune", static_cast<int> (padCoarseTuneParameters[pad]->load()));
     snapshot.getDynamicObject()->setProperty ("fineTune", padFineTuneParameters[pad]->load());
+    snapshot.getDynamicObject()->setProperty ("ampAttack", padAmplitudeParameters[pad][0]->load());
+    snapshot.getDynamicObject()->setProperty ("ampDecay", padAmplitudeParameters[pad][1]->load());
+    snapshot.getDynamicObject()->setProperty ("ampSustain", padAmplitudeParameters[pad][2]->load());
+    snapshot.getDynamicObject()->setProperty ("ampRelease", padAmplitudeParameters[pad][3]->load());
     auto pads = snapshot.getProperty ("pads", {});
     if (auto* items = pads.getArray())
         for (int index = 0; index < std::min (padCount, items->size()); ++index)
@@ -248,6 +262,40 @@ bool HyperrealAudioProcessor::setPadFineTune (const juce::var& command)
     }
     return false;
 }
+bool HyperrealAudioProcessor::setPadAmplitude (const juce::var& command)
+{
+    if (! command.isObject()
+        || static_cast<int> (command.getProperty ("schemaVersion", 0)) != 8)
+        return false;
+    const auto padValue = command.getProperty ("pad", {});
+    const auto fieldValue = command.getProperty ("field", {});
+    const auto parameterValue = command.getProperty ("value", {});
+    const auto numeric = [] (const juce::var& value)
+    {
+        return value.isInt() || value.isInt64() || value.isDouble();
+    };
+    if (! numeric (padValue) || ! fieldValue.isString() || ! numeric (parameterValue))
+        return false;
+    const auto pad = static_cast<double> (padValue);
+    const auto value = static_cast<double> (parameterValue);
+    const auto field = fieldValue.toString();
+    if (! std::isfinite (pad) || std::trunc (pad) != pad
+        || pad < 0.0 || pad >= padCount || ! std::isfinite (value)
+        || value < 0.0 || value > (field == "sustain" ? 1.0 : 10.0)
+        || (field != "attack" && field != "decay"
+            && field != "sustain" && field != "release"))
+        return false;
+    const auto id = juce::String::formatted ("pad.%02d.amp.", static_cast<int> (pad) + 1)
+                    + field + ".v1";
+    if (auto* parameter = parameters.getParameter (id))
+    {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost (parameter->convertTo0to1 (static_cast<float> (value)));
+        parameter->endChangeGesture();
+        return true;
+    }
+    return false;
+}
 bool HyperrealAudioProcessor::setPadEdit (const juce::var& command)
 {
     if (! command.isObject()
@@ -283,19 +331,22 @@ bool HyperrealAudioProcessor::setPadEdit (const juce::var& command)
                                       static_cast<bool> (reverse) },
                               static_cast<juce::int64> (revisionNumber));
 }
-std::array<float, 9> HyperrealAudioProcessor::readPadSettings (int pad) const
+std::array<float, 13> HyperrealAudioProcessor::readPadSettings (int pad) const
 {
     return { padLevelParameters[pad]->load(), padModeParameters[pad]->load(),
              padChokeParameters[pad]->load(), padMuteParameters[pad]->load(),
              padSoloParameters[pad]->load(), padVoiceLimitParameters[pad]->load(),
              padVelocityCurveParameters[pad]->load(),
-             padCoarseTuneParameters[pad]->load(), padFineTuneParameters[pad]->load() };
+             padCoarseTuneParameters[pad]->load(), padFineTuneParameters[pad]->load(),
+             padAmplitudeParameters[pad][0]->load(), padAmplitudeParameters[pad][1]->load(),
+             padAmplitudeParameters[pad][2]->load(), padAmplitudeParameters[pad][3]->load() };
 }
 
-void HyperrealAudioProcessor::applyPadSettings (int pad, const std::array<float, 9>& values)
+void HyperrealAudioProcessor::applyPadSettings (int pad, const std::array<float, 13>& values)
 {
-    constexpr const char* names[] { "level", "mode", "choke", "mute", "solo", "voices", "velocity", "coarse", "fine" };
-    for (int index = 0; index < 9; ++index)
+    constexpr const char* names[] { "level", "mode", "choke", "mute", "solo", "voices", "velocity", "coarse", "fine",
+                                    "amp.attack", "amp.decay", "amp.sustain", "amp.release" };
+    for (int index = 0; index < 13; ++index)
     {
         const auto id = juce::String::formatted ("pad.%02d.", pad + 1) + names[index] + ".v1";
         if (auto* parameter = parameters.getParameter (id))
@@ -341,7 +392,8 @@ bool HyperrealAudioProcessor::clearPad (int pad)
 {
     if (pad < 0 || pad >= padCount || ! engine.clearPad (pad))
         return false;
-    applyPadSettings (pad, { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 4.0f, 1.0f, 0.0f, 0.0f });
+    applyPadSettings (pad, { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 4.0f, 1.0f, 0.0f, 0.0f,
+                             0.0f, 0.0f, 1.0f, 0.0f });
     return true;
 }
 bool HyperrealAudioProcessor::setPadDiscreteParameter (const juce::var& command,
@@ -424,8 +476,10 @@ void HyperrealAudioProcessor::setStateInformation (const void* data, int size)
         return;
 
     const auto version = input.readInt();
-    const auto phase7 = std::memcmp (magic, stateMagic, sizeof (magic)) == 0
+    const auto phase8 = std::memcmp (magic, stateMagic, sizeof (magic)) == 0
                         && version == stateSchemaVersion;
+    const auto phase7 = std::memcmp (magic, phase7Magic, sizeof (magic)) == 0
+                        && version == 7;
     const auto phase6 = std::memcmp (magic, phase6Magic, sizeof (magic)) == 0
                         && version == 6;
     const auto phase5 = std::memcmp (magic, phase5Magic, sizeof (magic)) == 0
@@ -436,7 +490,7 @@ void HyperrealAudioProcessor::setStateInformation (const void* data, int size)
                         && version == 3;
     const auto phase2 = std::memcmp (magic, phase2Magic, sizeof (magic)) == 0
                         && version == 2;
-    if (! phase7 && ! phase6 && ! phase5 && ! phase4 && ! phase3 && ! phase2)
+    if (! phase8 && ! phase7 && ! phase6 && ! phase5 && ! phase4 && ! phase3 && ! phase2)
         return;
 
     const auto parameterSize = input.readInt();
@@ -451,8 +505,8 @@ void HyperrealAudioProcessor::setStateInformation (const void* data, int size)
     const auto snapshot = juce::ValueTree::readFromData (parameterBytes.getData(), parameterBytes.getSize());
     if (! snapshot.hasType ("HYPERREAL_STATE")
         || static_cast<int> (snapshot.getProperty ("schema_version", 0)) != version
-        || ! ((phase7 || phase6 || phase5 || phase4 || phase3)
-                  ? engine.restoreSampleState (input, phase7)
+        || ! ((phase8 || phase7 || phase6 || phase5 || phase4 || phase3)
+                  ? engine.restoreSampleState (input, phase8 || phase7)
                                : engine.restorePhase2SampleState (input)))
         return;
 
@@ -529,6 +583,23 @@ juce::AudioProcessorValueTreeState::ParameterLayout HyperrealAudioProcessor::cre
             juce::ParameterID { fineId, 1 },
             juce::String::formatted ("Pad %02d fine tune", pad),
             juce::NormalisableRange<float> (-100.0f, 100.0f, 0.1f), 0.0f));
+    }
+
+    for (int pad = 1; pad <= padCount; ++pad)
+    {
+        constexpr const char* names[] { "attack", "decay", "sustain", "release" };
+        constexpr float defaults[] { 0.0f, 0.0f, 1.0f, 0.0f };
+        for (int stage = 0; stage < 4; ++stage)
+        {
+            const auto id = juce::String::formatted ("pad.%02d.amp.", pad)
+                            + names[stage] + ".v1";
+            const auto name = juce::String::formatted ("Pad %02d amplitude ", pad)
+                              + names[stage] + (stage == 2 ? " level" : " seconds");
+            layout.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { id, 1 }, name,
+                juce::NormalisableRange<float> (0.0f, stage == 2 ? 1.0f : 10.0f,
+                                                 0.001f), defaults[stage]));
+        }
     }
 
     return { layout.begin(), layout.end() };

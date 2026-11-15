@@ -30,6 +30,10 @@ export type Snapshot = {
   velocityCurve: number
   coarseTune: number
   fineTune: number
+  ampAttack: number
+  ampDecay: number
+  ampSustain: number
+  ampRelease: number
 }
 export type Waveform = { schemaVersion: number; pad: number; level: number; sampleRevision: number; minimum: number[]; maximum: number[] }
 const demo: Snapshot = {
@@ -42,7 +46,8 @@ const demo: Snapshot = {
   trimStart: 0, trimEnd: 0, fadeInFrames: 0, fadeOutFrames: 0,
   reverse: false, playbackFrame: -1, playbackSpeed: 0, masterGain: 1,
   padLevel: 1, padMode: 0, chokeGroup: 0, muted: false, solo: false,
-  clipboardReady: false, voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0
+  clipboardReady: false, voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0,
+  ampAttack: 0, ampDecay: 0, ampSustain: 1, ampRelease: 0
 }
 const nativeAvailable = () => Boolean((window as Window & { __JUCE__?: unknown }).__JUCE__)
 export async function readSnapshot(): Promise<Snapshot> {
@@ -59,6 +64,9 @@ export async function setCoarseTune(pad: number, value: number): Promise<boolean
 }
 export async function setFineTune(pad: number, value: number): Promise<boolean> {
   return nativeAvailable() ? Boolean(await getNativeFunction('setFineTune')({ schemaVersion: 6, pad, value })) : false
+}
+export async function setPadAmplitude(pad: number, field: 'attack'|'decay'|'sustain'|'release', value: number): Promise<boolean> {
+  return nativeAvailable() ? Boolean(await getNativeFunction('setPadAmplitude')({ schemaVersion: 8, pad, field, value })) : false
 }
 export async function chooseSample(pad: number): Promise<void> {
   if (nativeAvailable()) await getNativeFunction('chooseSample')({ schemaVersion: 2, pad })
