@@ -71,6 +71,11 @@ int main()
             output.writeInt (4410);
             for (int frame = 0; frame < 4410; ++frame)
                 output.writeFloat (0.2f);
+            output.writeInt (0);    // Trim start.
+            output.writeInt (4410); // Exclusive trim end.
+            output.writeInt (0);    // Fade in.
+            output.writeInt (220);  // Default 5 ms fade out at 44.1 kHz.
+            output.writeByte (0);   // Forward playback.
         }
     }
 
@@ -131,6 +136,21 @@ int main()
     const auto afterEdits = privateBytes();
     std::cout << editCycles << " pad copy/paste/swap/clear and snapshot cycles, "
               << beforeEdits << " to " << afterEdits << " private bytes\n";
+
+    const auto revision = static_cast<juce::int64> (
+        engine.getSnapshot().getProperty ("sampleRevision", -1));
+    const auto beforeLiveEdits = privateBytes();
+    constexpr int liveEditCycles = 5000;
+    for (int cycle = 0; cycle < liveEditCycles; ++cycle)
+    {
+        if (! engine.setPadEdit (0, { 0, 4410, cycle % 512,
+                                       (cycle * 3) % 512, (cycle & 1) != 0 }, revision))
+            return 7;
+        engine.process (audio, midi, settings);
+    }
+    const auto afterLiveEdits = privateBytes();
+    std::cout << liveEditCycles << " immediate pad edits while processing, "
+              << beforeLiveEdits << " to " << afterLiveEdits << " private bytes\n";
 
     const auto source = juce::File::getSpecialLocation (juce::File::tempDirectory)
                             .getChildFile ("hyperreal-benchmark-import.wav");

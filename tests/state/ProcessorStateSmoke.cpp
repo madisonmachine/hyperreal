@@ -86,8 +86,15 @@ int main()
     const auto invalidMuteAccepted = original.setPadMute (setting (0, 2));
     const auto voicesSet = original.setPadVoiceLimit (setting (0, 1));
     const auto velocitySet = original.setPadVelocityCurve (setting (0, 2));
+    const auto coarseSet = original.setPadCoarseTune (setting (0, 7));
+    auto* fineCommand = new juce::DynamicObject();
+    fineCommand->setProperty ("schemaVersion", 6);
+    fineCommand->setProperty ("pad", 0);
+    fineCommand->setProperty ("value", 37.5);
+    const auto fineSet = original.setPadFineTune (juce::var (fineCommand));
     const auto invalidVoicesAccepted = original.setPadVoiceLimit (setting (0, 0));
     if (! modeSet || ! chokeSet || ! muteSet || ! soloSet || ! voicesSet || ! velocitySet
+        || ! coarseSet || ! fineSet || original.setPadCoarseTune (setting (0, 25))
         || invalidPadAccepted || invalidChokeAccepted || invalidMuteAccepted
         || invalidVoicesAccepted)
     {
@@ -95,6 +102,28 @@ int main()
                   << chokeSet << ' ' << invalidPadAccepted << ' ' << invalidChokeAccepted << "\n";
         return 1;
     }
+    auto* editCommand = new juce::DynamicObject();
+    editCommand->setProperty ("schemaVersion", 6);
+    editCommand->setProperty ("pad", 0);
+    editCommand->setProperty ("startFrame", 100);
+    editCommand->setProperty ("endFrame", 4000);
+    editCommand->setProperty ("fadeInFrames", 40);
+    editCommand->setProperty ("fadeOutFrames", 60);
+    editCommand->setProperty ("reversed", true);
+    juce::var editCommandValue (editCommand);
+    if (! original.setPadEdit (editCommandValue))
+        return 1;
+    const auto sampleRevision = static_cast<juce::int64> (
+        original.getSnapshot().getProperty ("sampleRevision", -1));
+    editCommand->setProperty ("sampleRevision", sampleRevision + 1);
+    if (original.setPadEdit (editCommandValue))
+    {
+        std::cerr << "Stale edit command was accepted\n";
+        return 1;
+    }
+    editCommand->setProperty ("sampleRevision", sampleRevision);
+    if (! original.setPadEdit (editCommandValue))
+        return 1;
 
     juce::MemoryBlock state;
     original.getStateInformation (state);
@@ -109,13 +138,50 @@ int main()
     const auto parameterSize = stateReader.readInt();
     juce::MemoryBlock parameterBytes (static_cast<size_t> (parameterSize));
     stateReader.read (parameterBytes.getData(), parameterSize);
+    juce::MemoryBlock legacySamples;
+    {
+        juce::MemoryOutputStream output (legacySamples, false);
+        for (int pad = 0; pad < SampleEngine::padCount; ++pad)
+        {
+            const auto present = stateReader.readByte();
+            output.writeByte (present);
+            if (present == 0)
+                continue;
+            const auto name = stateReader.readString();
+            const auto rate = stateReader.readDouble();
+            const auto channels = stateReader.readInt();
+            const auto count = stateReader.readInt();
+            output.writeString (name);
+            output.writeDouble (rate);
+            output.writeInt (channels);
+            output.writeInt (count);
+            for (int channel = 0; channel < channels; ++channel)
+                for (int frame = 0; frame < count; ++frame)
+                    output.writeFloat (stateReader.readFloat());
+            for (int field = 0; field < 4; ++field)
+                stateReader.readInt();
+            stateReader.readByte();
+        }
+    }
+    if (stateReader.getNumBytesRemaining() != 0)
+        return 1;
+    auto phase6Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
+                                                           parameterBytes.getSize());
+    phase6Parameters.setProperty ("schema_version", 6, nullptr);
+    for (int child = phase6Parameters.getNumChildren() - 1; child >= 0; --child)
+    {
+        const auto id = phase6Parameters.getChild (child).getProperty ("id").toString();
+        if (id.contains (".coarse.") || id.contains (".fine."))
+            phase6Parameters.removeChild (child, nullptr);
+    }
     auto phase5Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
                                                            parameterBytes.getSize());
     phase5Parameters.setProperty ("schema_version", 5, nullptr);
     for (int child = phase5Parameters.getNumChildren() - 1; child >= 0; --child)
     {
         const auto id = phase5Parameters.getChild (child).getProperty ("id").toString();
-        if (id.contains (".voices.") || id.contains (".velocity."))
+        if (id.contains (".voices.") || id.contains (".velocity.")
+            || id.contains (".coarse.") || id.contains (".fine."))
             phase5Parameters.removeChild (child, nullptr);
     }
     auto phase4Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
@@ -125,10 +191,11 @@ int main()
     {
         const auto id = phase4Parameters.getChild (child).getProperty ("id").toString();
         if (id.contains (".mute.") || id.contains (".solo.")
-            || id.contains (".voices.") || id.contains (".velocity."))
+            || id.contains (".voices.") || id.contains (".velocity.")
+            || id.contains (".coarse.") || id.contains (".fine."))
             phase4Parameters.removeChild (child, nullptr);
     }
-    auto makePreviousState = [&stateReader] (const juce::ValueTree& tree,
+    auto makePreviousState = [&legacySamples] (const juce::ValueTree& tree,
                                               const char* magic, int version)
     {
         juce::MemoryBlock parameterData;
@@ -140,10 +207,10 @@ int main()
         output.writeInt (version);
         output.writeInt (static_cast<int> (parameterData.getSize()));
         output.write (parameterData.getData(), parameterData.getSize());
-        output.write (static_cast<const char*> (stateReader.getData()) + stateReader.getPosition(),
-                      static_cast<size_t> (stateReader.getNumBytesRemaining()));
+        output.write (legacySamples.getData(), legacySamples.getSize());
         return previous;
     };
+    const auto phase6State = makePreviousState (phase6Parameters, "HRP6", 6);
     const auto phase5State = makePreviousState (phase5Parameters, "HRP5", 5);
     const auto phase4State = makePreviousState (phase4Parameters, "HRP4", 4);
     auto phase3Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
@@ -154,7 +221,8 @@ int main()
         const auto id = phase3Parameters.getChild (child).getProperty ("id").toString();
         if (id.contains (".mode.") || id.contains (".choke.")
             || id.contains (".mute.") || id.contains (".solo.")
-            || id.contains (".voices.") || id.contains (".velocity."))
+            || id.contains (".voices.") || id.contains (".velocity.")
+            || id.contains (".coarse.") || id.contains (".fine."))
             phase3Parameters.removeChild (child, nullptr);
     }
     const auto phase3State = makePreviousState (phase3Parameters, "HRP3", 3);
@@ -166,7 +234,8 @@ int main()
         const auto id = phase2Parameters.getChild (child).getProperty ("id").toString();
         if (id.contains (".mode.") || id.contains (".choke.")
             || id.contains (".mute.") || id.contains (".solo.")
-            || id.contains (".voices.") || id.contains (".velocity."))
+            || id.contains (".voices.") || id.contains (".velocity.")
+            || id.contains (".coarse.") || id.contains (".fine."))
             phase2Parameters.removeChild (child, nullptr);
     }
     juce::MemoryBlock phase2ParameterBytes;
@@ -201,6 +270,11 @@ int main()
         || static_cast<int> (snapshot.getProperty ("chokeGroup", -1)) != 2
         || static_cast<int> (snapshot.getProperty ("voiceLimit", -1)) != 1
         || static_cast<int> (snapshot.getProperty ("velocityCurve", -1)) != 2
+        || static_cast<int> (snapshot.getProperty ("coarseTune", -1)) != 7
+        || std::abs (static_cast<double> (snapshot.getProperty ("fineTune", 0.0)) - 37.5) > 0.11
+        || static_cast<int> (snapshot.getProperty ("trimStart", -1)) != 100
+        || static_cast<int> (snapshot.getProperty ("trimEnd", -1)) != 4000
+        || ! static_cast<bool> (snapshot.getProperty ("reverse", false))
         || ! static_cast<bool> (snapshot.getProperty ("muted", false))
         || ! restored.selectPad (1)
         || ! static_cast<bool> (restored.getSnapshot().getProperty ("solo", false)))
@@ -242,6 +316,7 @@ int main()
         return 1;
     }
     migrated.selectPad (0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
     migrated.processBlock (audio, midi);
     if (audio.getMagnitude (0, 0, 128) < 0.15f)
     {
@@ -276,6 +351,16 @@ int main()
         std::cerr << "Phase 5 project migration failed\n";
         return 1;
     }
+    HyperrealAudioProcessor phase6Migrated;
+    phase6Migrated.setStateInformation (phase6State.getData(), static_cast<int> (phase6State.getSize()));
+    if (phase6Migrated.getSnapshot().getProperty ("status", {}).toString() != "ready"
+        || static_cast<int> (phase6Migrated.getSnapshot().getProperty ("trimStart", -1)) != 0
+        || static_cast<int> (phase6Migrated.getSnapshot().getProperty ("trimEnd", -1)) != frames
+        || static_cast<int> (phase6Migrated.getSnapshot().getProperty ("coarseTune", -1)) != 0)
+    {
+        std::cerr << "Phase 6 project migration failed\n";
+        return 1;
+    }
 
     HyperrealAudioProcessor operations;
     operations.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
@@ -286,6 +371,8 @@ int main()
         || static_cast<int> (operations.getSnapshot().getProperty ("chokeGroup", -1)) != 2
         || static_cast<int> (operations.getSnapshot().getProperty ("voiceLimit", -1)) != 1
         || static_cast<int> (operations.getSnapshot().getProperty ("velocityCurve", -1)) != 2
+        || static_cast<int> (operations.getSnapshot().getProperty ("trimStart", -1)) != 100
+        || static_cast<int> (operations.getSnapshot().getProperty ("trimEnd", -1)) != 4000
         || ! static_cast<bool> (operations.getSnapshot().getProperty ("muted", false)))
     {
         std::cerr << "Pad paste did not copy sample and settings\n";
@@ -313,6 +400,50 @@ int main()
         || static_cast<int> (operations.getSnapshot().getProperty ("velocityCurve", -1)) != 1)
     {
         std::cerr << "Pad clear did not reset sample and settings\n";
+        return 1;
+    }
+
+    HyperrealAudioProcessor clicked;
+    clicked.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
+    clicked.prepareToPlay (44100.0, 128);
+    clicked.setPadMute (setting (0, 0));
+    clicked.setPadSolo (setting (1, 0));
+    if (! clicked.producesMidi())
+    {
+        std::cerr << "Pad-click MIDI output was not advertised\n";
+        return 1;
+    }
+    clicked.requestAudition (0);
+    juce::MidiBuffer clickMidi;
+    clickMidi.addEvent (juce::MidiMessage::noteOn (1, 37, static_cast<juce::uint8> (100)), 0);
+    clicked.processBlock (audio, clickMidi);
+    int outputNotes = 0;
+    for (const auto event : clickMidi)
+    {
+        if (! event.getMessage().isNoteOn() || event.getMessage().getNoteNumber() != 36)
+        {
+            std::cerr << "Pad-click output contained an unexpected MIDI event\n";
+            return 1;
+        }
+        ++outputNotes;
+    }
+    if (outputNotes != 1 || audio.getMagnitude (0, 0, 128) < 0.1f)
+    {
+        std::cerr << "Pad click did not audition and emit its MIDI note\n";
+        return 1;
+    }
+    bool noteOffReceived = false;
+    for (int block = 0; block < 40; ++block)
+    {
+        clickMidi.clear();
+        clicked.processBlock (audio, clickMidi);
+        for (const auto event : clickMidi)
+            if (event.getMessage().isNoteOff() && event.getMessage().getNoteNumber() == 36)
+                noteOffReceived = true;
+    }
+    if (! noteOffReceived)
+    {
+        std::cerr << "Pad-click MIDI note-off was not emitted\n";
         return 1;
     }
 

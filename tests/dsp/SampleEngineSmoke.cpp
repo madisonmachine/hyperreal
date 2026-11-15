@@ -38,6 +38,25 @@ void writeWav (const juce::File& file, int value)
     for (int frame = 0; frame < frames; ++frame)
         write16 (wav, static_cast<unsigned int> (value));
 }
+void writeRampWav (const juce::File& file, int rate = 44100)
+{
+    constexpr int frames = 256;
+    std::ofstream wav (file.getFullPathName().toStdString(), std::ios::binary);
+    wav.write ("RIFF", 4);
+    write32 (wav, 36 + frames * 2);
+    wav.write ("WAVEfmt ", 8);
+    write32 (wav, 16);
+    write16 (wav, 1);
+    write16 (wav, 1);
+    write32 (wav, static_cast<unsigned int> (rate));
+    write32 (wav, static_cast<unsigned int> (rate * 2));
+    write16 (wav, 2);
+    write16 (wav, 16);
+    wav.write ("data", 4);
+    write32 (wav, frames * 2);
+    for (int frame = 0; frame < frames; ++frame)
+        write16 (wav, static_cast<unsigned int> ((frame + 1) * 100));
+}
 bool waitForReady (SampleEngine& engine, int pad)
 {
     for (int attempt = 0; attempt < 300; ++attempt)
@@ -556,6 +575,205 @@ int main()
         std::cerr << "Tail-pool overflow did not release the old voice\n";
         return 46;
     }
+
+    const auto ramp = folder.getChildFile ("hyperreal-phase4-ramp.wav");
+    writeRampWav (ramp);
+    SampleEngine edited;
+    edited.prepare (44100.0);
+    edited.requestLoad (0, ramp);
+    if (! waitForReady (edited, 0)
+        || ! edited.setPadEdit (0, { 10, 20, 2, 2, false })
+        || edited.setPadEdit (0, { 20, 10, 0, 0, false }))
+        return 47;
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
+    edited.process (audio, midi);
+    if (! near (audio.getSample (0, 0), 0.0f)
+        || std::abs (audio.getSample (0, 1) - 1200.0f / 32768.0f * 0.5f) > 0.002f
+        || std::abs (audio.getSample (0, 8) - 1900.0f / 32768.0f * 0.5f) > 0.002f
+        || ! near (audio.getSample (0, 9), 0.0f)
+        || ! near (audio.getSample (0, 10), 0.0f))
+    {
+        std::cerr << "Trimmed playback fades or boundary failed\n";
+        return 48;
+    }
+    if (! edited.setPadEdit (0, { 10, 20, 0, 0, true }))
+        return 49;
+    edited.prepare (44100.0);
+    edited.process (audio, midi);
+    if (std::abs (audio.getSample (0, 0) - 2000.0f / 32768.0f) > 0.002f
+        || std::abs (audio.getSample (0, 9) - 1100.0f / 32768.0f) > 0.002f
+        || ! near (audio.getSample (0, 10), 0.0f))
+    {
+        std::cerr << "Reverse playback escaped selected region\n";
+        return 50;
+    }
+    const auto waveform = edited.getWaveform (0, 0);
+    if (! waveform.isObject()
+        || waveform.getProperty ("minimum", {}).getArray() == nullptr
+        || waveform.getProperty ("maximum", {}).getArray() == nullptr
+        || waveform.getProperty ("minimum", {}).getArray()->size() != 128)
+    {
+        std::cerr << "Waveform summary was not generated\n";
+        return 52;
+    }
+    if (! edited.setPadEdit (0, { 10, 20, 0, 0, false }))
+        return 53;
+    SampleEngine::PlaybackSettings tuning {};
+    tuning[0].coarseSemitones = 12;
+    edited.prepare (44100.0);
+    edited.process (audio, midi, tuning);
+    if (std::abs (audio.getSample (0, 1) - 1300.0f / 32768.0f) > 0.002f
+        || ! near (audio.getSample (0, 5), 0.0f))
+    {
+        std::cerr << "Octave-up resampling or duration failed\n";
+        return 54;
+    }
+    tuning[0].coarseSemitones = -12;
+    edited.prepare (44100.0);
+    edited.process (audio, midi, tuning);
+    if (std::abs (audio.getSample (0, 2) - 1200.0f / 32768.0f) > 0.002f
+        || ! near (audio.getSample (0, 20), 0.0f))
+    {
+        std::cerr << "Octave-down resampling or duration failed\n";
+        return 55;
+    }
+    tuning[0].coarseSemitones = 0;
+    edited.prepare (48000.0);
+    edited.process (audio, midi, tuning);
+    if (std::abs (audio.getSample (0, 1) - 1191.875f / 32768.0f) > 0.002f)
+    {
+        std::cerr << "Sample-rate resampling failed\n";
+        return 56;
+    }
+    if (! edited.setPadEdit (0, { 10, 20, 0, 0, true }))
+        return 57;
+    const auto revision = static_cast<juce::int64> (
+        edited.getSnapshot().getProperty ("sampleRevision", -1));
+    if (revision < 0
+        || ! edited.setPadEdit (0, { 10, 20, 0, 0, true }, revision)
+        || edited.setPadEdit (0, { 10, 15, 0, 0, false }, revision + 1))
+    {
+        std::cerr << "Live edit revision guard failed\n";
+        return 67;
+    }
+    juce::AudioBuffer<float> cursorAudio (2, 1);
+    edited.prepare (44100.0);
+    edited.process (cursorAudio, midi);
+    const auto cursorState = edited.getSnapshot();
+    if (static_cast<int> (cursorState.getProperty ("playbackFrame", -1)) != 18
+        || std::abs (static_cast<float> (cursorState.getProperty ("playbackSpeed", 0.0f))
+                     + 44100.0f) > 1.0f)
+    {
+        std::cerr << "Reverse cursor speed or position failed\n";
+        return 68;
+    }
+    juce::MemoryBlock editedState;
+    {
+        juce::MemoryOutputStream output (editedState, false);
+        edited.writeSampleState (output);
+    }
+    juce::MemoryInputStream editedInput (editedState.getData(), editedState.getSize(), false);
+    SampleEngine recalledEdit;
+    recalledEdit.prepare (44100.0);
+    if (! recalledEdit.restoreSampleState (editedInput)
+        || static_cast<int> (recalledEdit.getSnapshot().getProperty ("trimStart", -1)) != 10
+        || static_cast<int> (recalledEdit.getSnapshot().getProperty ("trimEnd", -1)) != 20
+        || ! static_cast<bool> (recalledEdit.getSnapshot().getProperty ("reverse", false)))
+    {
+        std::cerr << "Phase 4 edit state did not round-trip\n";
+        return 51;
+    }
+    const auto excessiveRate = folder.getChildFile ("hyperreal-phase4-rate-500k.wav");
+    writeRampWav (excessiveRate, 500000);
+    edited.requestLoad (0, excessiveRate);
+    bool rejectedRate = false;
+    for (int attempt = 0; attempt < 300; ++attempt)
+    {
+        const auto snapshot = edited.getSnapshot();
+        if (snapshot.getProperty ("message", {}).toString().contains ("unsupported"))
+        {
+            rejectedRate = snapshot.getProperty ("status", {}).toString() == "ready"
+                && static_cast<int> (snapshot.getProperty ("sourceFrames", -1)) == 256;
+            break;
+        }
+        std::this_thread::sleep_for (std::chrono::milliseconds (10));
+    }
+    excessiveRate.deleteFile();
+    if (! rejectedRate)
+    {
+        std::cerr << "Unsupported source rate replaced an active sample\n";
+        return 58;
+    }
+    const auto fastSource = folder.getChildFile ("hyperreal-phase4-rate-96k.wav");
+    writeRampWav (fastSource, 96000);
+    SampleEngine rateEngine;
+    rateEngine.requestLoad (0, fastSource);
+    if (! waitForReady (rateEngine, 0))
+        return 59;
+    juce::AudioBuffer<float> edgeAudio (2, 128);
+    juce::MidiBuffer edgeMidi;
+    edgeMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                       static_cast<juce::uint8> (127)), 0);
+    SampleEngine::PlaybackSettings extremeTune {};
+    for (const double hostRate : { 44100.0, 48000.0, 96000.0 })
+        for (const int coarse : { -24, 24 })
+            for (const float fine : { -100.0f, 100.0f })
+                for (const bool reverse : { false, true })
+                {
+                    rateEngine.prepare (hostRate);
+                    extremeTune[0].coarseSemitones = coarse;
+                    extremeTune[0].fineCents = fine;
+                    if (! rateEngine.setPadEdit (0, { 10, 20, 0, 0, reverse }))
+                        return 60;
+                    rateEngine.process (edgeAudio, edgeMidi, extremeTune);
+                    const auto ratio = std::pow (2.0, (coarse + fine / 100.0) / 12.0);
+                    const auto expectedFrames = static_cast<int> (std::ceil (
+                        10.0 / (96000.0 / hostRate * ratio)));
+                    const auto firstValue = (reverse ? 2000.0f : 1100.0f) / 32768.0f;
+                    if (expectedFrames < 1 || expectedFrames >= edgeAudio.getNumSamples()
+                        || std::abs (edgeAudio.getSample (0, 0) - firstValue) > 0.002f
+                        || edgeAudio.getSample (0, expectedFrames - 1) <= 0.0f)
+                    {
+                        std::cerr << "Extreme tuning start or duration failed\n";
+                        return 61;
+                    }
+                    for (int frame = expectedFrames; frame < edgeAudio.getNumSamples(); ++frame)
+                        if (! std::isfinite (edgeAudio.getSample (0, frame))
+                            || std::abs (edgeAudio.getSample (0, frame)) > 1.0e-6f)
+                        {
+                            std::cerr << "Extreme tuning escaped selected region\n";
+                            return 62;
+                        }
+                }
+    rateEngine.prepare (44100.0);
+    if (! rateEngine.setPadEdit (0, { 10, 11, 0, 0, true }))
+        return 63;
+    extremeTune[0] = {};
+    rateEngine.process (edgeAudio, edgeMidi, extremeTune);
+    if (std::abs (edgeAudio.getSample (0, 0) - 1100.0f / 32768.0f) > 0.002f
+        || ! near (edgeAudio.getSample (0, 1), 0.0f))
+    {
+        std::cerr << "One-frame reverse region failed\n";
+        return 64;
+    }
+    if (! rateEngine.setPadEdit (0, { 10, 11, 100, 100, false })
+        || static_cast<int> (rateEngine.getSnapshot().getProperty ("fadeInFrames", -1)) != 1
+        || static_cast<int> (rateEngine.getSnapshot().getProperty ("fadeOutFrames", -1)) != 1)
+    {
+        std::cerr << "Overlong fades were not clamped to a short region\n";
+        return 65;
+    }
+    rateEngine.prepare (44100.0);
+    rateEngine.process (edgeAudio, edgeMidi, extremeTune);
+    if (std::abs (edgeAudio.getSample (0, 0)) > 1.0e-6f
+        || std::abs (edgeAudio.getSample (0, 1)) > 1.0e-6f)
+    {
+        std::cerr << "One-frame fades did not end at silence\n";
+        return 66;
+    }
+    fastSource.deleteFile();
+    ramp.deleteFile();
 
     std::cout << "SampleEngine multi-pad smoke passed\n";
     return 0;

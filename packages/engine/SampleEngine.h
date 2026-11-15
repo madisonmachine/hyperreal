@@ -26,8 +26,18 @@ public:
         bool solo = false;
         int voiceLimit = 4;
         int velocityCurve = 1;
+        int coarseSemitones = 0;
+        float fineCents = 0.0f;
     };
     using PlaybackSettings = std::array<PadPlaybackSettings, padCount>;
+    struct Edit
+    {
+        int startFrame = 0;
+        int endFrame = 0; // Exclusive source-sample coordinate.
+        int fadeInFrames = 0;
+        int fadeOutFrames = 0;
+        bool reversed = false;
+    };
 
     SampleEngine();
     ~SampleEngine();
@@ -44,6 +54,7 @@ public:
     bool pastePad (int pad);
     bool swapPads (int first, int second);
     bool clearPad (int pad);
+    bool setPadEdit (int pad, Edit edit, juce::int64 expectedSampleRevision = -1);
     void requestAudition (int pad) noexcept;
     void requestTransportStop() noexcept { transportStopRequested.store (true); }
     void requestAudition() noexcept { requestAudition (0); }
@@ -57,16 +68,28 @@ public:
     void resumeDecodeForTest() noexcept { testPauseDecode.store (false); }
 #endif
     juce::var getSnapshot (int selectedPad = 0) const;
-    void writeSampleState (juce::OutputStream& output) const;
-    bool restoreSampleState (juce::InputStream& input);
+    juce::var getWaveform (int pad, int level) const;
+    void writeSampleState (juce::OutputStream& output, bool includeEdits = true) const;
+    bool restoreSampleState (juce::InputStream& input, bool hasEdits = true);
     bool restorePhase2SampleState (juce::InputStream& input);
 
 private:
-    struct Sample
+    struct WaveLevel
+    {
+        std::vector<float> minimum;
+        std::vector<float> maximum;
+    };
+    struct SampleData
     {
         juce::AudioBuffer<float> audio;
         double sampleRate = 0.0;
+        std::array<WaveLevel, 4> waveform;
+    };
+    struct Sample
+    {
+        std::shared_ptr<const SampleData> data;
         juce::String name;
+        Edit edit;
     };
     struct Voice
     {
@@ -81,11 +104,14 @@ private:
         int chokeGroup = 0;
         int releaseRemaining = 0;
         int releaseTotal = 0;
+        double step = 0.0;
     };
 
     static bool readSample (juce::InputStream& input, std::unique_ptr<Sample>& sample,
-                            juce::int64& decodedBytes);
-    static void writeSample (juce::OutputStream& output, const Sample* sample);
+                            juce::int64& decodedBytes, bool hasEdits);
+    static void writeSample (juce::OutputStream& output, const Sample* sample, bool includeEdits);
+    static Edit defaultEdit (int frames, double sampleRate) noexcept;
+    static void buildWaveform (SampleData& data);
     static std::unique_ptr<Sample> cloneSample (const Sample* sample);
     void workerLoop();
     void publishSample (int pad, std::unique_ptr<Sample> next);
@@ -113,6 +139,7 @@ private:
     int lastDequeuedPad = padCount - 1;
     std::array<juce::String, padCount> status;
     std::array<juce::String, padCount> message;
+    std::array<juce::uint64, padCount> sampleRevisions {};
     std::array<std::unique_ptr<Sample>, padCount> current;
     std::unique_ptr<Sample> clipboard;
     bool clipboardReady = false;
@@ -124,6 +151,8 @@ private:
     std::atomic<bool> callbackActive { false };
     std::array<std::atomic<unsigned int>, padCount> auditionCounters {};
     std::array<std::atomic<unsigned int>, padCount> midiTriggerCounters {};
+    std::array<std::atomic<int>, padCount> playbackFrames {};
+    std::array<std::atomic<float>, padCount> playbackSpeeds {};
     std::atomic<bool> transportStopRequested { false };
 #ifdef HYPERREAL_ENGINE_TEST_HOOKS
     std::atomic<bool> testPauseDecode { false };

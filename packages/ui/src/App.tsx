@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { audition, cancelLoad, chooseSample, clearPad, copyPad, importDroppedFile, pastePad, readSnapshot, selectPad, setChokeGroup, setMasterGain, setPadMode, setPadMute, setPadSolo, setVelocityCurve, setVoiceLimit, swapPads, type Snapshot } from './bridge'
+import WaveformEditor from './WaveformEditor'
 
 const initial: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
@@ -7,9 +8,12 @@ const initial: Snapshot = {
     index, midiNote: index + 36, midiTriggerCount: 0, status: 'empty', sampleName: '', muted: false, solo: false
   })),
   sampleName: '', status: 'empty', message: '', durationSeconds: 0,
-  sampleRate: 0, masterGain: 1, padLevel: 1, padMode: 0, chokeGroup: 0,
+  sampleRate: 0, sourceFrames: 0, sampleRevision: 0,
+  trimStart: 0, trimEnd: 0, fadeInFrames: 0, fadeOutFrames: 0,
+  reverse: false, playbackFrame: -1, playbackSpeed: 0,
+  masterGain: 1, padLevel: 1, padMode: 0, chokeGroup: 0,
   muted: false, solo: false, clipboardReady: false,
-  voiceLimit: 4, velocityCurve: 1
+  voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0
 }
 
 export default function App() {
@@ -18,14 +22,18 @@ export default function App() {
   const [pending, setPending] = useState<{ kind: 'paste'|'swap'|'clear'; pad: number; otherPad?: number } | null>(null)
   const [context, setContext] = useState<{ pad: number; x: number; y: number } | null>(null)
   const [dropProgress, setDropProgress] = useState<{ pad: number; percent: number } | null>(null)
+  const [waveformOpen, setWaveformOpen] = useState(false)
   const [auditionFlash, setAuditionFlash] = useState<number | null>(null)
   const auditionTimer = useRef<number | undefined>(undefined)
   const [operationError, setOperationError] = useState('')
   useEffect(() => {
     let alive = true
+    let inFlight = false
     let lastMidiCounts: number[] | null = null
     const midiFlashUntil = Array<number>(16).fill(0)
     const refresh = async () => {
+      if (inFlight) return
+      inFlight = true
       try {
         const next = await readSnapshot()
         if (alive) {
@@ -44,12 +52,12 @@ export default function App() {
         if (alive) setSnapshot(current => ({
           ...current, status: 'error', message: 'Native state unavailable.'
         }))
-      }
+      } finally { inFlight = false }
     }
     void refresh()
-    const timer = window.setInterval(() => void refresh(), 250)
+    const timer = window.setInterval(() => void refresh(), waveformOpen ? 50 : 250)
     return () => { alive = false; window.clearInterval(timer); window.clearTimeout(auditionTimer.current) }
-  }, [])
+  }, [waveformOpen])
 
   const selected = snapshot.selectedPad
   const selectedLabel = String(selected + 1).padStart(2, '0')
@@ -74,7 +82,7 @@ export default function App() {
   return <main className="chassis"
     onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }}
     onDrop={event => { event.preventDefault(); handleDroppedFile(selected, event.dataTransfer.files[0]) }}>
-    <header><div><strong>HYPERREAL</strong><small>16 PAD DRUM SAMPLER</small></div><span>PHASE 3 FOUNDATION</span></header>
+    <header><div><strong>HYPERREAL</strong><small>16 PAD DRUM SAMPLER</small></div><span>PHASE 4 DEVELOPMENT</span></header>
     <section className="display" aria-live="polite">
       <div className="display-row"><span>PAD {selectedLabel} / MIDI {selected + 36}</span><span>{snapshot.status.toUpperCase()}</span></div>
       <h1>{snapshot.sampleName || 'NO SAMPLE LOADED'}</h1>
@@ -107,6 +115,9 @@ export default function App() {
         <b>{pad.sampleName || 'UNASSIGNED'}</b>
         <span>MIDI {pad.midiNote}</span>
       </button>)}</section>
+    <details className="waveform-panel" onToggle={event => setWaveformOpen(event.currentTarget.open)}>
+      <summary>WAVEFORM / SAMPLE EDIT</summary>{waveformOpen && <WaveformEditor key={snapshot.selectedPad} snapshot={snapshot} />}
+    </details>
     {context && <>
       <div className="context-dismiss" onClick={() => { setContext(null); setPending(null) }} />
       <div className="pad-context" role="menu" aria-label={'Pad '+(context.pad+1)+' options'} style={{ left: Math.min(context.x, window.innerWidth - 210), top: Math.min(context.y, window.innerHeight - 270) }}>
