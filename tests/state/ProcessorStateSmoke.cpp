@@ -316,6 +316,7 @@ int main()
         return 1;
     }
     migrated.selectPad (0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 36, static_cast<juce::uint8> (127)), 0);
     migrated.processBlock (audio, midi);
     if (audio.getMagnitude (0, 0, 128) < 0.15f)
     {
@@ -399,6 +400,50 @@ int main()
         || static_cast<int> (operations.getSnapshot().getProperty ("velocityCurve", -1)) != 1)
     {
         std::cerr << "Pad clear did not reset sample and settings\n";
+        return 1;
+    }
+
+    HyperrealAudioProcessor clicked;
+    clicked.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
+    clicked.prepareToPlay (44100.0, 128);
+    clicked.setPadMute (setting (0, 0));
+    clicked.setPadSolo (setting (1, 0));
+    if (! clicked.producesMidi())
+    {
+        std::cerr << "Pad-click MIDI output was not advertised\n";
+        return 1;
+    }
+    clicked.requestAudition (0);
+    juce::MidiBuffer clickMidi;
+    clickMidi.addEvent (juce::MidiMessage::noteOn (1, 37, static_cast<juce::uint8> (100)), 0);
+    clicked.processBlock (audio, clickMidi);
+    int outputNotes = 0;
+    for (const auto event : clickMidi)
+    {
+        if (! event.getMessage().isNoteOn() || event.getMessage().getNoteNumber() != 36)
+        {
+            std::cerr << "Pad-click output contained an unexpected MIDI event\n";
+            return 1;
+        }
+        ++outputNotes;
+    }
+    if (outputNotes != 1 || audio.getMagnitude (0, 0, 128) < 0.1f)
+    {
+        std::cerr << "Pad click did not audition and emit its MIDI note\n";
+        return 1;
+    }
+    bool noteOffReceived = false;
+    for (int block = 0; block < 40; ++block)
+    {
+        clickMidi.clear();
+        clicked.processBlock (audio, clickMidi);
+        for (const auto event : clickMidi)
+            if (event.getMessage().isNoteOff() && event.getMessage().getNoteNumber() == 36)
+                noteOffReceived = true;
+    }
+    if (! noteOffReceived)
+    {
+        std::cerr << "Pad-click MIDI note-off was not emitted\n";
         return 1;
     }
 

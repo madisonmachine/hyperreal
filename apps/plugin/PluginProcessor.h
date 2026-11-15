@@ -35,7 +35,7 @@ public:
     }
     void requestSampleLoad (juce::File file) { requestSampleLoad (0, std::move (file)); }
     void cancelSampleLoad (int pad) { engine.cancelLoad (pad); }
-    void requestAudition (int pad) noexcept { engine.requestAudition (pad); }
+    void requestAudition (int pad) noexcept;
     void requestAudition() noexcept { requestAudition (selectedPad.load()); }
     bool selectPad (int pad) noexcept;
     int getSelectedPad() const noexcept { return selectedPad.load(); }
@@ -78,6 +78,10 @@ private:
     std::array<float, 9> clipboardSettings { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 4.0f, 1.0f, 0.0f, 0.0f };
     bool clipboardSettingsReady = false;
     std::atomic<int> selectedPad { 0 };
+    std::array<std::atomic<unsigned int>, SampleEngine::padCount> padClickCounters {};
+    std::array<unsigned int, SampleEngine::padCount> padClickSeen {};
+    std::array<int, SampleEngine::padCount> noteOffCountdown {};
+    double currentSampleRate = 44100.0;
     bool transportWasPlaying = false;
     juce::SmoothedValue<float> smoothedMasterGain;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HyperrealAudioProcessor)

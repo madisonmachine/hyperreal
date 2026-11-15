@@ -48,6 +48,12 @@ HyperrealAudioProcessor::HyperrealAudioProcessor()
 void HyperrealAudioProcessor::prepareToPlay (double sampleRate, int)
 {
     engine.prepare (sampleRate);
+    currentSampleRate = sampleRate;
+    for (int pad = 0; pad < padCount; ++pad)
+    {
+        padClickSeen[pad] = padClickCounters[pad].load (std::memory_order_relaxed);
+        noteOffCountdown[pad] = 0;
+    }
     transportWasPlaying = false;
     smoothedMasterGain.reset (sampleRate, 0.01);
     smoothedMasterGain.setCurrentAndTargetValue (parameters.getRawParameterValue ("master.gain.v1")->load());
@@ -80,6 +86,34 @@ void HyperrealAudioProcessor::processBlock (juce::AudioBuffer<float>& audio, juc
         playback[pad].fineCents = padFineTuneParameters[pad]->load();
     }
     engine.process (audio, midi, playback);
+    // The instrument track's input has already been consumed by the engine.
+    // Only editor pad presses belong on HYPERREAL's MIDI output bus.
+    midi.clear();
+    const auto framesInBlock = audio.getNumSamples();
+    const auto noteLength = std::max (1, static_cast<int> (currentSampleRate * 0.1));
+    for (int pad = 0; pad < padCount; ++pad)
+    {
+        const auto note = SampleEngine::firstMidiNote + pad;
+        const auto clicks = padClickCounters[pad].load (std::memory_order_relaxed);
+        if (clicks != padClickSeen[pad] && framesInBlock > 0)
+        {
+            padClickSeen[pad] = clicks; // Match the engine's one audition per block.
+            if (noteOffCountdown[pad] > 0)
+                midi.addEvent (juce::MidiMessage::noteOff (1, note), 0);
+            midi.addEvent (juce::MidiMessage::noteOn (1, note, static_cast<juce::uint8> (127)), 0);
+            noteOffCountdown[pad] = noteLength;
+        }
+        if (noteOffCountdown[pad] > 0)
+        {
+            if (noteOffCountdown[pad] <= framesInBlock)
+            {
+                midi.addEvent (juce::MidiMessage::noteOff (1, note), noteOffCountdown[pad] - 1);
+                noteOffCountdown[pad] = 0;
+            }
+            else
+                noteOffCountdown[pad] -= framesInBlock;
+        }
+    }
     smoothedMasterGain.setTargetValue (parameters.getRawParameterValue ("master.gain.v1")->load());
     for (int frame = 0; frame < audio.getNumSamples(); ++frame)
     {
@@ -128,6 +162,14 @@ bool HyperrealAudioProcessor::selectPad (int pad) noexcept
         return false;
     selectedPad.store (pad);
     return true;
+}
+
+void HyperrealAudioProcessor::requestAudition (int pad) noexcept
+{
+    if (pad < 0 || pad >= padCount)
+        return;
+    engine.requestAudition (pad);
+    padClickCounters[pad].fetch_add (1, std::memory_order_relaxed);
 }
 
 bool HyperrealAudioProcessor::setMasterGain (const juce::var& command)
@@ -336,7 +378,7 @@ bool HyperrealAudioProcessor::setPadDiscreteParameter (const juce::var& command,
 bool HyperrealAudioProcessor::hasEditor() const { return true; }
 const juce::String HyperrealAudioProcessor::getName() const { return JucePlugin_Name; }
 bool HyperrealAudioProcessor::acceptsMidi() const { return true; }
-bool HyperrealAudioProcessor::producesMidi() const { return false; }
+bool HyperrealAudioProcessor::producesMidi() const { return true; }
 bool HyperrealAudioProcessor::isMidiEffect() const { return false; }
 double HyperrealAudioProcessor::getTailLengthSeconds() const { return 0.0; }
 int HyperrealAudioProcessor::getNumPrograms() { return 1; }

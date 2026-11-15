@@ -10,6 +10,7 @@ Development started 14 November 2026 on `phase4-waveform-editing-tuning` from th
 - Coarse tune is a host parameter from -24 to +24 semitones; fine tune is a host parameter from -100 to +100 cents. Numeric input validates range and reports rejected values; semitone snap rounds the combined offset. Resampling changes pitch and duration together, and a 10 ms glide smooths changes to an active voice. Voices retire at the selected region boundary within the current audio block.
 - Host state `HRP7` stores edit metadata and tune parameters. Older `HRP6` through `HRP2` states migrate with full-region default edits and zero tuning. Copy, paste, swap and clear include or reset the new fields.
 - The import worker now rejects source rates above 384 kHz, matching host-state restore validation. This prevents out-of-range default edit calculations while preserving any sample already loaded on that pad. Malformed edit state is rejected before waveform summaries are generated.
+- Pad clicks now advertise and emit MIDI notes 36–51 on channel 1, with a short 100 ms gate, as well as auditioning the audio. Incoming keyboard MIDI is consumed by the instrument and is not echoed on this output. Cubase records an instrument track's input before the instrument runs, so these click events require a separate MIDI track whose input is HYPERREAL's MIDI output. Record that track and route its output back to HYPERREAL for playback. Recording clicks directly into the same instrument track is outside the VST3 instrument signal path.
 
 ## Checked locally
 
@@ -17,10 +18,13 @@ The Release UI and plugin build and both CTest suites pass. Pluginval strictness
 
 The updated live-edit VST3 also passes the Release build, both CTest suites and pluginval strictness 5. It is installed for the revised Cubase checks; the previous per-user bundle is backed up in `build/manual-test`. Native regressions cover rejection of a stale sample revision and reverse playback cursor speed. A further 5,000 immediate pad edits while audio processing left private bytes unchanged at 4,128,768 on this synthetic run.
 
+The pad-click MIDI output update passes the Release VST3 build, both native test suites and pluginval strictness 5. A processor regression verifies click note-on/note-off, audible audition and no keyboard MIDI echo. The Cubase recording route remains to be verified after installing this bundle while Cubase is closed.
+
 ## Still required for Phase 4 sign-off
 
 - Host checks in Cubase for waveform display, marker dragging, MIDI versus audition consistency, save/reopen and automation of tuning.
 - Listen for aliasing at high transposition and decide whether the current interpolation quality is sufficient. Check extreme zoom in the host editor.
 - Check the fixed-size Cubase editor while audio is playing, including playback cursor, scrolling and UI responsiveness. Host resizing is not exposed by the current editor and belongs to the later interface phase. Pitch analysis and scale quantization are optional and deferred.
+- In Cubase, verify that HYPERREAL's MIDI output appears as an input on a separate MIDI track, that pad clicks record notes 36–51 there, and that the resulting MIDI part plays HYPERREAL. Check that keyboard input is not duplicated on the output track.
 
 The disconnected clean-Windows installation and sustained host-use checks remain deferred from earlier phases, separately from Phase 4 acceptance.
