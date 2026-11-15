@@ -137,6 +137,21 @@ int main()
     std::cout << editCycles << " pad copy/paste/swap/clear and snapshot cycles, "
               << beforeEdits << " to " << afterEdits << " private bytes\n";
 
+    const auto revision = static_cast<juce::int64> (
+        engine.getSnapshot().getProperty ("sampleRevision", -1));
+    const auto beforeLiveEdits = privateBytes();
+    constexpr int liveEditCycles = 5000;
+    for (int cycle = 0; cycle < liveEditCycles; ++cycle)
+    {
+        if (! engine.setPadEdit (0, { 0, 4410, cycle % 512,
+                                       (cycle * 3) % 512, (cycle & 1) != 0 }, revision))
+            return 7;
+        engine.process (audio, midi, settings);
+    }
+    const auto afterLiveEdits = privateBytes();
+    std::cout << liveEditCycles << " immediate pad edits while processing, "
+              << beforeLiveEdits << " to " << afterLiveEdits << " private bytes\n";
+
     const auto source = juce::File::getSpecialLocation (juce::File::tempDirectory)
                             .getChildFile ("hyperreal-benchmark-import.wav");
     if (! writeImportWav (source))

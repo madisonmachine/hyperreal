@@ -228,10 +228,18 @@ bool HyperrealAudioProcessor::setPadEdit (const juce::var& command)
     const auto fadeIn = integer ("fadeInFrames");
     const auto fadeOut = integer ("fadeOutFrames");
     const auto reverse = command.getProperty ("reversed", {});
+    const auto revisionValue = command.getProperty ("sampleRevision", -1);
+    if (! (revisionValue.isInt() || revisionValue.isInt64() || revisionValue.isDouble()))
+        return false;
+    const auto revisionNumber = static_cast<double> (revisionValue);
+    if (! std::isfinite (revisionNumber) || std::trunc (revisionNumber) != revisionNumber
+        || revisionNumber < -1.0 || revisionNumber > 9007199254740991.0)
+        return false;
     if (! pad || ! start || ! end || ! fadeIn || ! fadeOut || ! reverse.isBool())
         return false;
     return engine.setPadEdit (*pad, { *start, *end, *fadeIn, *fadeOut,
-                                      static_cast<bool> (reverse) });
+                                      static_cast<bool> (reverse) },
+                              static_cast<juce::int64> (revisionNumber));
 }
 std::array<float, 9> HyperrealAudioProcessor::readPadSettings (int pad) const
 {

@@ -28,6 +28,7 @@ SampleEngine::SampleEngine()
         auditionCounters[pad].store (0);
         midiTriggerCounters[pad].store (0);
         playbackFrames[pad].store (-1);
+        playbackSpeeds[pad].store (0.0f);
         status[pad] = "empty";
         message[pad] = "Load WAV, AIFF or FLAC to begin.";
     }
@@ -58,6 +59,7 @@ void SampleEngine::prepare (double hostSampleRate) noexcept
         auditionSeen[pad] = auditionCounters[pad].load();
         audiblePads[pad] = true;
         playbackFrames[pad].store (-1);
+        playbackSpeeds[pad].store (0.0f);
     }
     for (int voiceIndex = 0; voiceIndex < maxVoices; ++voiceIndex)
     {
@@ -233,12 +235,15 @@ bool SampleEngine::clearPad (int pad)
     return true;
 }
 
-bool SampleEngine::setPadEdit (int pad, Edit edit)
+bool SampleEngine::setPadEdit (int pad, Edit edit, juce::int64 expectedSampleRevision)
 {
     if (pad < 0 || pad >= padCount)
         return false;
     std::lock_guard lock (controlMutex);
     if (current[pad] == nullptr)
+        return false;
+    if (expectedSampleRevision >= 0
+        && static_cast<juce::uint64> (expectedSampleRevision) != sampleRevisions[pad])
         return false;
     const auto frames = current[pad]->data->audio.getNumSamples();
     edit.startFrame = std::clamp (edit.startFrame, 0, frames - 1);
@@ -536,6 +541,9 @@ void SampleEngine::process (juce::AudioBuffer<float>& output, const juce::MidiBu
                 ? latest->sample->edit.endFrame - 1 - latest->position
                 : latest->sample->edit.startFrame + latest->position);
         playbackFrames[pad].store (frame, std::memory_order_relaxed);
+        const auto speed = latest == nullptr ? 0.0f : static_cast<float> (
+            latest->step * hostRate * (latest->sample->edit.reversed ? -1.0 : 1.0));
+        playbackSpeeds[pad].store (speed, std::memory_order_relaxed);
     }
     callbackActive.store (false);
 }
@@ -567,6 +575,8 @@ juce::var SampleEngine::getSnapshot (int selectedPad) const
     object->setProperty ("fadeOutFrames", edit.fadeOutFrames);
     object->setProperty ("reverse", edit.reversed);
     object->setProperty ("playbackFrame", playbackFrames[selectedPad].load (
+        std::memory_order_relaxed));
+    object->setProperty ("playbackSpeed", playbackSpeeds[selectedPad].load (
         std::memory_order_relaxed));
     juce::Array<juce::var> pads;
     for (int pad = 0; pad < padCount; ++pad)

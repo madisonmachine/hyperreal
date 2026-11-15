@@ -648,6 +648,26 @@ int main()
     }
     if (! edited.setPadEdit (0, { 10, 20, 0, 0, true }))
         return 57;
+    const auto revision = static_cast<juce::int64> (
+        edited.getSnapshot().getProperty ("sampleRevision", -1));
+    if (revision < 0
+        || ! edited.setPadEdit (0, { 10, 20, 0, 0, true }, revision)
+        || edited.setPadEdit (0, { 10, 15, 0, 0, false }, revision + 1))
+    {
+        std::cerr << "Live edit revision guard failed\n";
+        return 67;
+    }
+    juce::AudioBuffer<float> cursorAudio (2, 1);
+    edited.prepare (44100.0);
+    edited.process (cursorAudio, midi);
+    const auto cursorState = edited.getSnapshot();
+    if (static_cast<int> (cursorState.getProperty ("playbackFrame", -1)) != 18
+        || std::abs (static_cast<float> (cursorState.getProperty ("playbackSpeed", 0.0f))
+                     + 44100.0f) > 1.0f)
+    {
+        std::cerr << "Reverse cursor speed or position failed\n";
+        return 68;
+    }
     juce::MemoryBlock editedState;
     {
         juce::MemoryOutputStream output (editedState, false);

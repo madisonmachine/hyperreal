@@ -54,7 +54,7 @@ public:
     bool pastePad (int pad);
     bool swapPads (int first, int second);
     bool clearPad (int pad);
-    bool setPadEdit (int pad, Edit edit);
+    bool setPadEdit (int pad, Edit edit, juce::int64 expectedSampleRevision = -1);
     void requestAudition (int pad) noexcept;
     void requestTransportStop() noexcept { transportStopRequested.store (true); }
     void requestAudition() noexcept { requestAudition (0); }
@@ -152,6 +152,7 @@ private:
     std::array<std::atomic<unsigned int>, padCount> auditionCounters {};
     std::array<std::atomic<unsigned int>, padCount> midiTriggerCounters {};
     std::array<std::atomic<int>, padCount> playbackFrames {};
+    std::array<std::atomic<float>, padCount> playbackSpeeds {};
     std::atomic<bool> transportStopRequested { false };
 #ifdef HYPERREAL_ENGINE_TEST_HOOKS
     std::atomic<bool> testPauseDecode { false };

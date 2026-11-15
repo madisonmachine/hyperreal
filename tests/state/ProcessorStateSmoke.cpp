@@ -110,7 +110,19 @@ int main()
     editCommand->setProperty ("fadeInFrames", 40);
     editCommand->setProperty ("fadeOutFrames", 60);
     editCommand->setProperty ("reversed", true);
-    if (! original.setPadEdit (juce::var (editCommand)))
+    juce::var editCommandValue (editCommand);
+    if (! original.setPadEdit (editCommandValue))
+        return 1;
+    const auto sampleRevision = static_cast<juce::int64> (
+        original.getSnapshot().getProperty ("sampleRevision", -1));
+    editCommand->setProperty ("sampleRevision", sampleRevision + 1);
+    if (original.setPadEdit (editCommandValue))
+    {
+        std::cerr << "Stale edit command was accepted\n";
+        return 1;
+    }
+    editCommand->setProperty ("sampleRevision", sampleRevision);
+    if (! original.setPadEdit (editCommandValue))
         return 1;
 
     juce::MemoryBlock state;

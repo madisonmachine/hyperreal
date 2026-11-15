@@ -18,6 +18,7 @@ export type Snapshot = {
   fadeOutFrames: number
   reverse: boolean
   playbackFrame: number
+  playbackSpeed: number
   masterGain: number
   padLevel: number
   padMode: number
@@ -39,7 +40,7 @@ const demo: Snapshot = {
   sampleName: '', status: 'empty', message: 'Open the plugin to load a sample.',
   durationSeconds: 0, sampleRate: 0, sourceFrames: 0, sampleRevision: 0,
   trimStart: 0, trimEnd: 0, fadeInFrames: 0, fadeOutFrames: 0,
-  reverse: false, playbackFrame: -1, masterGain: 1,
+  reverse: false, playbackFrame: -1, playbackSpeed: 0, masterGain: 1,
   padLevel: 1, padMode: 0, chokeGroup: 0, muted: false, solo: false,
   clipboardReady: false, voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0
 }
@@ -50,8 +51,8 @@ export async function readSnapshot(): Promise<Snapshot> {
 export async function readWaveform(pad: number, level: number): Promise<Waveform | null> {
   return nativeAvailable() ? await getNativeFunction('getWaveform')({ schemaVersion: 6, pad, level }) as Waveform | null : null
 }
-export async function setPadEdit(pad: number, edit: { startFrame: number; endFrame: number; fadeInFrames: number; fadeOutFrames: number; reversed: boolean }): Promise<boolean> {
-  return nativeAvailable() ? Boolean(await getNativeFunction('setPadEdit')({ schemaVersion: 6, pad, ...edit })) : false
+export async function setPadEdit(pad: number, sampleRevision: number, edit: { startFrame: number; endFrame: number; fadeInFrames: number; fadeOutFrames: number; reversed: boolean }): Promise<boolean> {
+  return nativeAvailable() ? Boolean(await getNativeFunction('setPadEdit')({ schemaVersion: 6, pad, sampleRevision, ...edit })) : false
 }
 export async function setCoarseTune(pad: number, value: number): Promise<boolean> {
   return nativeAvailable() ? Boolean(await getNativeFunction('setCoarseTune')({ schemaVersion: 3, pad, value })) : false

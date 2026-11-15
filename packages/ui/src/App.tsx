@@ -10,7 +10,7 @@ const initial: Snapshot = {
   sampleName: '', status: 'empty', message: '', durationSeconds: 0,
   sampleRate: 0, sourceFrames: 0, sampleRevision: 0,
   trimStart: 0, trimEnd: 0, fadeInFrames: 0, fadeOutFrames: 0,
-  reverse: false, playbackFrame: -1,
+  reverse: false, playbackFrame: -1, playbackSpeed: 0,
   masterGain: 1, padLevel: 1, padMode: 0, chokeGroup: 0,
   muted: false, solo: false, clipboardReady: false,
   voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0
@@ -28,9 +28,12 @@ export default function App() {
   const [operationError, setOperationError] = useState('')
   useEffect(() => {
     let alive = true
+    let inFlight = false
     let lastMidiCounts: number[] | null = null
     const midiFlashUntil = Array<number>(16).fill(0)
     const refresh = async () => {
+      if (inFlight) return
+      inFlight = true
       try {
         const next = await readSnapshot()
         if (alive) {
@@ -49,12 +52,12 @@ export default function App() {
         if (alive) setSnapshot(current => ({
           ...current, status: 'error', message: 'Native state unavailable.'
         }))
-      }
+      } finally { inFlight = false }
     }
     void refresh()
-    const timer = window.setInterval(() => void refresh(), 250)
+    const timer = window.setInterval(() => void refresh(), waveformOpen ? 50 : 250)
     return () => { alive = false; window.clearInterval(timer); window.clearTimeout(auditionTimer.current) }
-  }, [])
+  }, [waveformOpen])
 
   const selected = snapshot.selectedPad
   const selectedLabel = String(selected + 1).padStart(2, '0')
@@ -113,7 +116,7 @@ export default function App() {
         <span>MIDI {pad.midiNote}</span>
       </button>)}</section>
     <details className="waveform-panel" onToggle={event => setWaveformOpen(event.currentTarget.open)}>
-      <summary>WAVEFORM / SAMPLE EDIT</summary>{waveformOpen && <WaveformEditor snapshot={snapshot} />}
+      <summary>WAVEFORM / SAMPLE EDIT</summary>{waveformOpen && <WaveformEditor key={snapshot.selectedPad} snapshot={snapshot} />}
     </details>
     {context && <>
       <div className="context-dismiss" onClick={() => { setContext(null); setPending(null) }} />
