@@ -26,4 +26,4 @@ The automation presentation slice passes the React/TypeScript build, Release VST
 
 - Check visible host-originated automation, sustained slider drags, range ergonomics and envelope graphs in Cubase.
 - Percussion listening checks, Cubase automation/drag checks and any issues those reveal. Extend full-chain rendered-audio comparisons if host listening uncovers a mismatch.
-- Combined Phase 4/5 Cubase checks at the end of Phase 5. The current installed per-user VST3 remains the validated Phase 4 build; the Phase 5 development build has not been installed for host testing.
+- Combined Phase 4/5 Cubase checks at the end of Phase 5. The validated Phase 5 development VST3 was installed in the per-user VST3 folder on 15 November 2026 after backing up the Phase 4 bundle under ignored `build/host-backup`. Its installed binary SHA-256 matches the local Release build. Cubase checks are in progress and are not yet signed off.
