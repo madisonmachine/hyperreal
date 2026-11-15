@@ -105,9 +105,31 @@ int main()
                               && original.setPadAmplitude (amplitudeSetting (0, "decay", 0.02))
                               && original.setPadAmplitude (amplitudeSetting (0, "sustain", 0.6))
                               && original.setPadAmplitude (amplitudeSetting (0, "release", 0.03));
+    const auto filterSetting = [] (int pad, const char* field, double value)
+    {
+        auto* item = new juce::DynamicObject();
+        item->setProperty ("schemaVersion", 9);
+        item->setProperty ("pad", pad);
+        item->setProperty ("field", field);
+        item->setProperty ("value", value);
+        return juce::var (item);
+    };
+    const auto filterSet = original.setPadFilter (filterSetting (0, "mode", 1))
+                           && original.setPadFilter (filterSetting (0, "cutoff", 5000))
+                           && original.setPadFilter (filterSetting (0, "resonance", 0.8))
+                           && original.setPadFilter (filterSetting (0, "depth", 12))
+                           && original.setPadFilter (filterSetting (0, "attack", 0.01))
+                           && original.setPadFilter (filterSetting (0, "decay", 0.02))
+                           && original.setPadFilter (filterSetting (0, "sustain", 0.7))
+                           && original.setPadFilter (filterSetting (0, "release", 0.03));
     const auto invalidVoicesAccepted = original.setPadVoiceLimit (setting (0, 0));
     if (! modeSet || ! chokeSet || ! muteSet || ! soloSet || ! voicesSet || ! velocitySet
-        || ! coarseSet || ! fineSet || ! amplitudeSet
+        || ! coarseSet || ! fineSet || ! amplitudeSet || ! filterSet
+        || original.setPadFilter (filterSetting (0, "mode", 1.5))
+        || original.setPadFilter (filterSetting (0, "cutoff", 20001))
+        || original.setPadFilter (filterSetting (0, "resonance", 0.1))
+        || original.setPadFilter (filterSetting (0, "depth", 49))
+        || original.setPadFilter (filterSetting (0, "unknown", 1))
         || original.setPadAmplitude (amplitudeSetting (0, "attack", -1.0))
         || original.setPadAmplitude (amplitudeSetting (0, "sustain", 1.1))
         || original.setPadAmplitude (amplitudeSetting (0, "unknown", 0.5))
@@ -193,7 +215,7 @@ int main()
     {
         const auto id = phase6Parameters.getChild (child).getProperty ("id").toString();
         if (id.contains (".coarse.") || id.contains (".fine.")
-            || id.contains (".amp."))
+            || id.contains (".amp.") || id.contains (".filter."))
             phase6Parameters.removeChild (child, nullptr);
     }
     auto phase5Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
@@ -204,7 +226,7 @@ int main()
         const auto id = phase5Parameters.getChild (child).getProperty ("id").toString();
         if (id.contains (".voices.") || id.contains (".velocity.")
             || id.contains (".coarse.") || id.contains (".fine.")
-            || id.contains (".amp."))
+            || id.contains (".amp.") || id.contains (".filter."))
             phase5Parameters.removeChild (child, nullptr);
     }
     auto phase4Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
@@ -216,7 +238,7 @@ int main()
         if (id.contains (".mute.") || id.contains (".solo.")
             || id.contains (".voices.") || id.contains (".velocity.")
             || id.contains (".coarse.") || id.contains (".fine.")
-            || id.contains (".amp."))
+            || id.contains (".amp.") || id.contains (".filter."))
             phase4Parameters.removeChild (child, nullptr);
     }
     auto makePreviousState = [&legacySamples] (const juce::ValueTree& tree,
@@ -238,7 +260,8 @@ int main()
                                                            parameterBytes.getSize());
     phase7Parameters.setProperty ("schema_version", 7, nullptr);
     for (int child = phase7Parameters.getNumChildren() - 1; child >= 0; --child)
-        if (phase7Parameters.getChild (child).getProperty ("id").toString().contains (".amp."))
+        if (phase7Parameters.getChild (child).getProperty ("id").toString().contains (".amp.")
+            || phase7Parameters.getChild (child).getProperty ("id").toString().contains (".filter."))
             phase7Parameters.removeChild (child, nullptr);
     juce::MemoryBlock phase7State;
     {
@@ -250,6 +273,24 @@ int main()
         output.writeInt (7);
         output.writeInt (static_cast<int> (phase7ParameterBytes.getSize()));
         output.write (phase7ParameterBytes.getData(), phase7ParameterBytes.getSize());
+        output.write (phase7Samples.getData(), phase7Samples.getSize());
+    }
+    auto phase8Parameters = juce::ValueTree::readFromData (parameterBytes.getData(),
+                                                           parameterBytes.getSize());
+    phase8Parameters.setProperty ("schema_version", 8, nullptr);
+    for (int child = phase8Parameters.getNumChildren() - 1; child >= 0; --child)
+        if (phase8Parameters.getChild (child).getProperty ("id").toString().contains (".filter."))
+            phase8Parameters.removeChild (child, nullptr);
+    juce::MemoryBlock phase8State;
+    {
+        juce::MemoryBlock phase8ParameterBytes;
+        juce::MemoryOutputStream parametersOutput (phase8ParameterBytes, false);
+        phase8Parameters.writeToStream (parametersOutput);
+        juce::MemoryOutputStream output (phase8State, false);
+        output.write ("HRP8", 4);
+        output.writeInt (8);
+        output.writeInt (static_cast<int> (phase8ParameterBytes.getSize()));
+        output.write (phase8ParameterBytes.getData(), phase8ParameterBytes.getSize());
         output.write (phase7Samples.getData(), phase7Samples.getSize());
     }
     const auto phase6State = makePreviousState (phase6Parameters, "HRP6", 6);
@@ -265,7 +306,7 @@ int main()
             || id.contains (".mute.") || id.contains (".solo.")
             || id.contains (".voices.") || id.contains (".velocity.")
             || id.contains (".coarse.") || id.contains (".fine.")
-            || id.contains (".amp."))
+            || id.contains (".amp.") || id.contains (".filter."))
             phase3Parameters.removeChild (child, nullptr);
     }
     const auto phase3State = makePreviousState (phase3Parameters, "HRP3", 3);
@@ -279,7 +320,7 @@ int main()
             || id.contains (".mute.") || id.contains (".solo.")
             || id.contains (".voices.") || id.contains (".velocity.")
             || id.contains (".coarse.") || id.contains (".fine.")
-            || id.contains (".amp."))
+            || id.contains (".amp.") || id.contains (".filter."))
             phase2Parameters.removeChild (child, nullptr);
     }
     juce::MemoryBlock phase2ParameterBytes;
@@ -320,6 +361,11 @@ int main()
         || std::abs (static_cast<double> (snapshot.getProperty ("ampDecay", -1.0)) - 0.02) > 0.001
         || std::abs (static_cast<double> (snapshot.getProperty ("ampSustain", -1.0)) - 0.6) > 0.001
         || std::abs (static_cast<double> (snapshot.getProperty ("ampRelease", -1.0)) - 0.03) > 0.001
+        || static_cast<int> (snapshot.getProperty ("filterMode", -1)) != 1
+        || std::abs (static_cast<double> (snapshot.getProperty ("filterCutoff", -1.0)) - 5000.0) > 1.0
+        || std::abs (static_cast<double> (snapshot.getProperty ("filterResonance", -1.0)) - 0.8) > 0.02
+        || std::abs (static_cast<double> (snapshot.getProperty ("filterDepth", -100.0)) - 12.0) > 0.11
+        || std::abs (static_cast<double> (snapshot.getProperty ("filterSustain", -1.0)) - 0.7) > 0.001
         || static_cast<int> (snapshot.getProperty ("trimStart", -1)) != 100
         || static_cast<int> (snapshot.getProperty ("trimEnd", -1)) != 4000
         || ! static_cast<bool> (snapshot.getProperty ("reverse", false))
@@ -415,9 +461,21 @@ int main()
     if (phase7Snapshot.getProperty ("status", {}).toString() != "ready"
         || static_cast<int> (phase7Snapshot.getProperty ("trimStart", -1)) != 100
         || std::abs (static_cast<double> (phase7Snapshot.getProperty ("ampAttack", -1.0))) > 0.001
+        || static_cast<int> (phase7Snapshot.getProperty ("filterMode", -1)) != 0
         || std::abs (static_cast<double> (phase7Snapshot.getProperty ("ampSustain", -1.0)) - 1.0) > 0.001)
     {
         std::cerr << "Phase 7 project migration failed\n";
+        return 1;
+    }
+    HyperrealAudioProcessor phase8Migrated;
+    phase8Migrated.setStateInformation (phase8State.getData(), static_cast<int> (phase8State.getSize()));
+    const auto phase8Snapshot = phase8Migrated.getSnapshot();
+    if (phase8Snapshot.getProperty ("status", {}).toString() != "ready"
+        || static_cast<int> (phase8Snapshot.getProperty ("trimStart", -1)) != 100
+        || std::abs (static_cast<double> (phase8Snapshot.getProperty ("ampSustain", -1.0)) - 0.6) > 0.001
+        || static_cast<int> (phase8Snapshot.getProperty ("filterMode", -1)) != 0)
+    {
+        std::cerr << "Phase 8 project migration failed\n";
         return 1;
     }
 
@@ -434,6 +492,8 @@ int main()
         || static_cast<int> (operations.getSnapshot().getProperty ("trimEnd", -1)) != 4000
         || std::abs (static_cast<double> (
             operations.getSnapshot().getProperty ("ampSustain", -1.0)) - 0.6) > 0.001
+        || std::abs (static_cast<double> (
+            operations.getSnapshot().getProperty ("filterDepth", -100.0)) - 12.0) > 0.11
         || ! static_cast<bool> (operations.getSnapshot().getProperty ("muted", false)))
     {
         std::cerr << "Pad paste did not copy sample and settings\n";
@@ -460,7 +520,8 @@ int main()
         || static_cast<int> (operations.getSnapshot().getProperty ("voiceLimit", -1)) != 4
         || static_cast<int> (operations.getSnapshot().getProperty ("velocityCurve", -1)) != 1
         || std::abs (static_cast<double> (
-            operations.getSnapshot().getProperty ("ampSustain", -1.0)) - 1.0) > 0.001)
+            operations.getSnapshot().getProperty ("ampSustain", -1.0)) - 1.0) > 0.001
+        || static_cast<int> (operations.getSnapshot().getProperty ("filterMode", -1)) != 0)
     {
         std::cerr << "Pad clear did not reset sample and settings\n";
         return 1;

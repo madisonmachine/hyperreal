@@ -24,6 +24,14 @@ public:
         float sustain = 1.0f;
         float releaseSeconds = 0.0f;
     };
+    struct FilterSettings
+    {
+        int mode = 0; // Off, low-pass, high-pass, band-pass.
+        float cutoffHz = 20000.0f;
+        float resonance = 0.707f; // Q.
+        float envelopeDepthSemitones = 0.0f;
+        Envelope envelope;
+    };
     struct PadPlaybackSettings
     {
         bool gated = false;
@@ -36,6 +44,7 @@ public:
         int coarseSemitones = 0;
         float fineCents = 0.0f;
         Envelope amplitude;
+        FilterSettings filter;
     };
     using PlaybackSettings = std::array<PadPlaybackSettings, padCount>;
     struct Edit
@@ -120,6 +129,20 @@ private:
         float envelopeReleaseStart = 1.0f;
         float envelopeLevel = 1.0f;
         bool envelopeReleased = false;
+        FilterSettings filter;
+        juce::uint64 filterEnvelopeAge = 0;
+        int filterReleaseRemaining = 0;
+        int filterReleaseTotal = 0;
+        float filterReleaseStart = 1.0f;
+        float filterEnvelopeLevel = 1.0f;
+        bool filterEnvelopeReleased = false;
+        std::array<double, 2> filterIntegrator1 {};
+        std::array<double, 2> filterIntegrator2 {};
+        double filterG = 0.0;
+        double filterK = 1.0 / 0.707;
+        double filterTargetG = 0.0;
+        double filterTargetK = 1.0 / 0.707;
+        int filterUpdateCountdown = 0;
     };
 
     static bool readSample (juce::InputStream& input, std::unique_ptr<Sample>& sample,
@@ -137,6 +160,7 @@ private:
     void releaseAll (int midiChannel = 0) noexcept;
     void beginRelease (Voice& voice) noexcept;
     void beginEnvelopeRelease (Voice& voice, int maximumFrames = 0) noexcept;
+    void beginFilterEnvelopeRelease (Voice& voice, int maximumFrames = 0) noexcept;
     void renderVoice (Voice& voice, std::atomic<const Sample*>& pointer,
                       juce::AudioBuffer<float>& output, int begin, int end,
                       const PlaybackSettings& settings) noexcept;

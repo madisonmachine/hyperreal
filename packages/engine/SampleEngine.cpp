@@ -290,6 +290,19 @@ void SampleEngine::beginEnvelopeRelease (Voice& playing, int maximumFrames) noex
     playing.envelopeReleaseRemaining = playing.envelopeReleaseTotal;
 }
 
+void SampleEngine::beginFilterEnvelopeRelease (Voice& playing, int maximumFrames) noexcept
+{
+    if (playing.sample == nullptr || playing.filterEnvelopeReleased)
+        return;
+    playing.filterEnvelopeReleased = true;
+    playing.filterReleaseStart = playing.filterEnvelopeLevel;
+    playing.filterReleaseTotal = std::max (1, static_cast<int> (
+        hostRate * playing.filter.envelope.releaseSeconds));
+    if (maximumFrames > 0)
+        playing.filterReleaseTotal = std::min (playing.filterReleaseTotal, maximumFrames);
+    playing.filterReleaseRemaining = playing.filterReleaseTotal;
+}
+
 void SampleEngine::noteOff (int pad, int midiChannel) noexcept
 {
     Voice* oldestHeld = nullptr;
@@ -300,7 +313,10 @@ void SampleEngine::noteOff (int pad, int midiChannel) noexcept
             && (oldestHeld == nullptr || playing.sequence < oldestHeld->sequence))
             oldestHeld = &playing;
     if (oldestHeld != nullptr)
+    {
         beginEnvelopeRelease (*oldestHeld);
+        beginFilterEnvelopeRelease (*oldestHeld);
+    }
 }
 
 void SampleEngine::releaseAll (int midiChannel) noexcept
@@ -398,6 +414,20 @@ void SampleEngine::startVoice (int pad, float velocity, bool audition,
         valid (settings[pad].amplitude.releaseSeconds, 0.0f, 10.0f)
     };
     playing.envelopeLevel = playing.amplitude.attackSeconds > 0.0f ? 0.0f : 1.0f;
+    playing.filter = settings[pad].filter;
+    playing.filter.mode = std::clamp (playing.filter.mode, 0, 3);
+    playing.filter.cutoffHz = std::isfinite (playing.filter.cutoffHz)
+        ? std::clamp (playing.filter.cutoffHz, 20.0f, 20000.0f) : 20000.0f;
+    playing.filter.resonance = valid (playing.filter.resonance, 0.707f, 10.0f);
+    playing.filter.resonance = std::max (0.5f, playing.filter.resonance);
+    playing.filter.envelopeDepthSemitones = std::isfinite (playing.filter.envelopeDepthSemitones)
+        ? std::clamp (playing.filter.envelopeDepthSemitones, -48.0f, 48.0f) : 0.0f;
+    auto& filterEnvelope = playing.filter.envelope;
+    filterEnvelope.attackSeconds = valid (filterEnvelope.attackSeconds, 0.0f, 10.0f);
+    filterEnvelope.decaySeconds = valid (filterEnvelope.decaySeconds, 0.0f, 10.0f);
+    filterEnvelope.sustain = valid (filterEnvelope.sustain, 1.0f, 1.0f);
+    filterEnvelope.releaseSeconds = valid (filterEnvelope.releaseSeconds, 0.0f, 10.0f);
+    playing.filterEnvelopeLevel = filterEnvelope.attackSeconds > 0.0f ? 0.0f : 1.0f;
     voicePointers[chosen].store (sample);
 }
 
@@ -428,6 +458,11 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
     const auto fadeOutInverse = edit.fadeOutFrames > 0 ? 1.0 / edit.fadeOutFrames : 0.0;
     const auto attackFrames = static_cast<juce::uint64> (hostRate * playing.amplitude.attackSeconds);
     const auto decayFrames = static_cast<juce::uint64> (hostRate * playing.amplitude.decaySeconds);
+    const auto filterAttackFrames = static_cast<juce::uint64> (
+        hostRate * playing.filter.envelope.attackSeconds);
+    const auto filterDecayFrames = static_cast<juce::uint64> (
+        hostRate * playing.filter.envelope.decaySeconds);
+    const auto filterSmoothing = std::min (1.0, 1.0 / (hostRate * 0.005));
     for (int frame = begin; frame < end; ++frame)
     {
         if (playing.position >= regionFrames)
@@ -473,10 +508,90 @@ void SampleEngine::renderVoice (Voice& playing, std::atomic<const Sample*>& poin
         const auto outGain = edit.fadeOutFrames == 0 || playing.position < fadeOutStart ? 1.0f
             : static_cast<float> (std::max (0.0,
                 (static_cast<double> (regionFrames - 1) - playing.position) * fadeOutInverse));
-        left[frame] += (sourceLeft[index] + (sourceLeft[next] - sourceLeft[index]) * fraction)
-                       * playing.gain * level * envelopeGain * releaseGain * inGain * outGain;
-        right[frame] += (sourceRight[index] + (sourceRight[next] - sourceRight[index]) * fraction)
-                        * playing.gain * level * envelopeGain * releaseGain * inGain * outGain;
+        auto sampleLeft = sourceLeft[index] + (sourceLeft[next] - sourceLeft[index]) * fraction;
+        auto sampleRight = sourceRight[index] + (sourceRight[next] - sourceRight[index]) * fraction;
+        if (playing.filter.mode != 0)
+        {
+            const auto& envelope = playing.filter.envelope;
+            float filterLevel = envelope.sustain;
+            if (! playing.filterEnvelopeReleased && playing.filterEnvelopeAge < filterAttackFrames)
+                filterLevel = static_cast<float> (playing.filterEnvelopeAge + 1) / filterAttackFrames;
+            else if (! playing.filterEnvelopeReleased
+                     && playing.filterEnvelopeAge < filterAttackFrames + filterDecayFrames)
+                filterLevel = 1.0f + (envelope.sustain - 1.0f)
+                    * static_cast<float> (playing.filterEnvelopeAge - filterAttackFrames + 1)
+                    / filterDecayFrames;
+            playing.filterEnvelopeLevel = filterLevel;
+            if (! playing.gated && ! playing.filterEnvelopeReleased
+                && envelope.releaseSeconds > 0.0f)
+            {
+                const auto remainingSourceFrames = regionFrames - playing.position;
+                if (remainingSourceFrames <= playing.step * hostRate * envelope.releaseSeconds)
+                    beginFilterEnvelopeRelease (playing, std::max (1, static_cast<int> (
+                        std::ceil (remainingSourceFrames / std::max (playing.step, 1.0e-9)))));
+            }
+            if (playing.filterEnvelopeReleased)
+                filterLevel = playing.filterReleaseStart
+                    * static_cast<float> (playing.filterReleaseRemaining)
+                    / playing.filterReleaseTotal;
+            playing.filterEnvelopeLevel = filterLevel;
+            ++playing.filterEnvelopeAge;
+            if (playing.filterReleaseRemaining > 0)
+                --playing.filterReleaseRemaining;
+
+            if (playing.filterUpdateCountdown-- <= 0)
+            {
+                const auto& live = settings[playing.pad].filter;
+                const auto baseCutoff = std::isfinite (live.cutoffHz)
+                    ? std::clamp (live.cutoffHz, 20.0f, 20000.0f) : 20000.0f;
+                const auto depth = std::isfinite (live.envelopeDepthSemitones)
+                    ? std::clamp (live.envelopeDepthSemitones, -48.0f, 48.0f) : 0.0f;
+                const auto cutoff = std::clamp (
+                    static_cast<double> (baseCutoff) * std::exp2 (depth * filterLevel / 12.0),
+                    20.0, std::min (20000.0, hostRate * 0.45));
+                const auto resonance = std::isfinite (live.resonance)
+                    ? std::clamp (live.resonance, 0.5f, 10.0f) : 0.707f;
+                playing.filterTargetG = std::tan (juce::MathConstants<double>::pi * cutoff / hostRate);
+                playing.filterTargetK = 1.0 / resonance;
+                if (playing.filterEnvelopeAge == 1)
+                {
+                    playing.filterG = playing.filterTargetG;
+                    playing.filterK = playing.filterTargetK;
+                }
+                playing.filterUpdateCountdown = 7;
+            }
+            playing.filterG += (playing.filterTargetG - playing.filterG) * filterSmoothing;
+            playing.filterK += (playing.filterTargetK - playing.filterK) * filterSmoothing;
+            const auto filterChannel = [&playing] (double input, int channel)
+            {
+                const auto g = playing.filterG;
+                const auto k = playing.filterK;
+                const auto v3 = input - playing.filterIntegrator2[channel];
+                const auto band = (playing.filterIntegrator1[channel] + g * v3)
+                    / (1.0 + g * (g + k));
+                const auto low = playing.filterIntegrator2[channel] + g * band;
+                playing.filterIntegrator1[channel] = 2.0 * band - playing.filterIntegrator1[channel];
+                playing.filterIntegrator2[channel] = 2.0 * low - playing.filterIntegrator2[channel];
+                if (! std::isfinite (low) || ! std::isfinite (band))
+                {
+                    playing.filterIntegrator1[channel] = 0.0;
+                    playing.filterIntegrator2[channel] = 0.0;
+                    return 0.0f;
+                }
+                if (std::abs (playing.filterIntegrator1[channel]) < 1.0e-20)
+                    playing.filterIntegrator1[channel] = 0.0;
+                if (std::abs (playing.filterIntegrator2[channel]) < 1.0e-20)
+                    playing.filterIntegrator2[channel] = 0.0;
+                const auto output = playing.filter.mode == 1 ? low
+                                    : playing.filter.mode == 2 ? input - k * band - low : band;
+                return static_cast<float> (std::clamp (output, -8.0, 8.0));
+            };
+            sampleLeft = filterChannel (sampleLeft, 0);
+            sampleRight = filterChannel (sampleRight, 1);
+        }
+        const auto voiceGain = playing.gain * level * envelopeGain * releaseGain * inGain * outGain;
+        left[frame] += sampleLeft * voiceGain;
+        right[frame] += sampleRight * voiceGain;
         if (std::abs (playing.step - targetStep) > 1.0e-7)
             playing.step += (targetStep - playing.step) * stepSmoothing;
         else

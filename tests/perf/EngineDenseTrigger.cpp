@@ -92,7 +92,11 @@ int main()
             1, SampleEngine::firstMidiNote + pad, static_cast<juce::uint8> (100)), pad * 8);
     SampleEngine::PlaybackSettings settings {};
     for (auto& pad : settings)
+    {
         pad.amplitude = { 0.003f, 0.04f, 0.7f, 0.03f };
+        pad.filter = { 1, 4000.0f, 0.8f, 12.0f,
+                       { 0.005f, 0.04f, 0.6f, 0.03f } };
+    }
     engine.process (audio, midi, settings);
     const auto initialPrivateBytes = privateBytes();
     constexpr int blocks = 100000;

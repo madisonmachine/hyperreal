@@ -1,6 +1,6 @@
 # HYPERREAL
 
-HYPERREAL is a 16-pad drum sampler VST3. This branch begins Phase 5 with per-pad amplitude ADSR. The instrument already has native sample loading, a bounded voice engine, non-destructive waveform editing, tuning, and a locally bundled React interface. This is a development build; Phase 4 and 5 Cubase checks are scheduled together at the end of Phase 5.
+HYPERREAL is a 16-pad drum sampler VST3. This branch is developing Phase 5 with per-pad amplitude and filter envelopes and per-voice filters. The instrument also has native sample loading, a bounded voice engine, non-destructive waveform editing, tuning, and a locally bundled React interface. This is a development build; Phase 4 and 5 Cubase checks are scheduled together at the end of Phase 5.
 
 The [product brief](brief.docx) defines functionality, the [design brief](design-brief.txt) defines the retro local interface, and the [development plan](plan.docx) defines phase order. Dated entries live in [changelogs](changelogs).
 
@@ -26,7 +26,7 @@ The compiled VST3 and standalone app appear under `build/windows-x64/HYPERREAL_a
 
 - Select one of 16 pads and load a local WAV, AIFF, or FLAC file using the native file chooser. Decode happens on a worker thread. Imports are limited to two channels, 60 seconds, 128 MB decoded per pad and 512 MB for the current 16-pad set.
 - MIDI notes 36–51 play their matching pads in one-shot or gated mode. Pad clicks audition the same engine and emit MIDI through a VST3 output bus. Up to four voices per pad overlap in the bounded 64-voice pool.
-- Host parameters control master gain, pad performance settings, tuning, and amplitude ADSR. Trim, fades and reverse edit the playback region without changing source samples.
+- Host parameters control master gain, pad performance settings, tuning, amplitude ADSR and filter shaping. Trim, fades and reverse edit the playback region without changing source samples.
 - DAW project state embeds all 16 decoded samples and their settings without source paths. Supported earlier state versions remain readable.
 - The interface is bundled locally and remains separate from audio processing.
 

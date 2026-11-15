@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { audition, cancelLoad, chooseSample, clearPad, copyPad, importDroppedFile, pastePad, readSnapshot, selectPad, setChokeGroup, setMasterGain, setPadMode, setPadMute, setPadSolo, setVelocityCurve, setVoiceLimit, swapPads, type Snapshot } from './bridge'
 import WaveformEditor from './WaveformEditor'
 import AmplitudeEditor from './AmplitudeEditor'
+import FilterEditor from './FilterEditor'
 
 const initial: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
@@ -15,7 +16,9 @@ const initial: Snapshot = {
   masterGain: 1, padLevel: 1, padMode: 0, chokeGroup: 0,
   muted: false, solo: false, clipboardReady: false,
   voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0,
-  ampAttack: 0, ampDecay: 0, ampSustain: 1, ampRelease: 0
+  ampAttack: 0, ampDecay: 0, ampSustain: 1, ampRelease: 0,
+  filterMode: 0, filterCutoff: 20000, filterResonance: 0.707, filterDepth: 0,
+  filterAttack: 0, filterDecay: 0, filterSustain: 1, filterRelease: 0
 }
 
 export default function App() {
@@ -123,6 +126,10 @@ export default function App() {
     <details className="amplitude-panel">
       <summary>AMPLITUDE ENVELOPE / PAD {selectedLabel}</summary>
       <AmplitudeEditor key={selected} snapshot={snapshot} />
+    </details>
+    <details className="filter-panel">
+      <summary>FILTER / PAD {selectedLabel}</summary>
+      <FilterEditor key={selected} snapshot={snapshot} />
     </details>
     {context && <>
       <div className="context-dismiss" onClick={() => { setContext(null); setPending(null) }} />
