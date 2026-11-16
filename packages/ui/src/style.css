@@ -105,3 +105,23 @@ header{margin-bottom:11px}
 .master-led.red.is-lit{background:#eb5951;border-color:#ffaca4;box-shadow:0 0 8px #ed524a,inset 0 0 3px #ffe5df}
 .master-led.red.is-clipping{box-shadow:0 0 12px 3px #ef4a40,inset 0 0 3px #fff}
 @media(max-width:700px){.master-fader-body{min-height:210px}.master-fader-body input[type=range]{height:186px}.master-led-row{gap:.5px}.master-led-label{width:5px}.master-led{width:6px;height:6px}.chassis header strong{font-size:33px}}
+
+/* A single even outline around the editing display; controls live in their own screen. */
+.display{border:2px solid #656153;box-shadow:inset 0 0 18px #050505}
+.display-tabs{border-bottom:1px solid #756443}
+.display-tabs button[aria-selected=true]{position:relative;z-index:1;margin-bottom:-1px;padding-bottom:9px;box-shadow:none}
+.display-tab-panel{border:1px solid #756443;border-top:0}
+.pad-settings{display:flex;align-items:end;flex-wrap:wrap;gap:12px 18px;margin:14px 0 16px;padding:10px 13px;background:#000;border:2px solid #464d3e;border-radius:5px;box-shadow:inset 0 0 13px #172014;color:#b6d88a;font-family:PixelifySans,Consolas,monospace;font-size:13px;letter-spacing:.04em}
+.pad-settings label{display:flex;flex-direction:column;align-items:start;gap:3px;white-space:nowrap}
+.pad-settings select{min-width:67px;height:27px;padding:2px 22px 2px 7px;background:#090e08;color:#d4f59c;border:1px solid #65784b;border-radius:2px;font-family:PixelifySans,Consolas,monospace;font-size:15px;box-shadow:inset 0 0 5px #172615;cursor:pointer}
+.pad-settings select:focus-visible{outline:2px solid #d4f59c;outline-offset:2px}
+.pad-settings span{margin-left:auto;align-self:center;white-space:nowrap;color:#9dbb79}
+.pad-cell{position:relative;min-width:0}
+.performance-surface .pad-cell .pad{width:100%;height:70px}
+.pad-cell .pad>span:first-child{max-width:calc(100% - 38px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pad-toggles{position:absolute;top:5px;right:5px;display:flex;gap:2px}
+.pad-toggle{width:17px;height:16px;padding:0;border:1px solid #73716d;border-radius:3px;background:#202223;color:#a6a4a0;font:700 10px/14px Consolas,monospace;text-align:center;cursor:pointer}
+.pad-toggle.mute.is-on{background:#a74746;border-color:#e79a8e;color:#fff0e9;box-shadow:0 0 5px #cb5d58}
+.pad-toggle.solo.is-on{background:#c38b3c;border-color:#f0c784;color:#18130b;box-shadow:0 0 5px #d7a95a}
+.pad-toggle:focus-visible{outline:2px solid #ffd18b;outline-offset:1px}
+@media(max-width:700px){.pad-settings{gap:8px 12px;padding:8px}.pad-settings select{font-size:13px}.pad-toggles{top:4px;right:4px;gap:1px}.pad-toggle{width:15px;height:14px;font-size:9px;line-height:12px}.pad-cell .pad>span:first-child{max-width:calc(100% - 32px);font-size:8px}}

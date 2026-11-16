@@ -87,6 +87,15 @@ export default function App() {
     setPending(null)
     setContext(null)
   }
+  const togglePadFlag = (pad: number, flag: 'muted'|'solo') => {
+    const value = !snapshot.pads[pad][flag]
+    setSnapshot(current => ({
+      ...current,
+      pads: current.pads.map(item => item.index === pad ? { ...item, [flag]: value } : item),
+      ...(current.selectedPad === pad ? { [flag]: value } : {})
+    }))
+    void (flag === 'muted' ? setPadMute(pad, value) : setPadSolo(pad, value))
+  }
   return <main className="chassis"
     onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }}
     onDrop={event => { event.preventDefault(); handleDroppedFile(selected, event.dataTransfer.files[0]) }}>
@@ -123,27 +132,34 @@ export default function App() {
     <section className="pad-settings" aria-label={'Pad '+selectedLabel+' playback settings'}>
       <label>MODE <select value={snapshot.padMode} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, padMode:value })); void setPadMode(selected, value) }}><option value={0}>ONE-SHOT</option><option value={1}>GATE</option></select></label>
       <label>CHOKE GROUP <select value={snapshot.chokeGroup} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, chokeGroup:value })); void setChokeGroup(selected, value) }}>{[0,1,2,3,4].map(group => <option key={group} value={group}>{group === 0 ? 'OFF' : group}</option>)}</select></label>
-      <label><input type="checkbox" checked={snapshot.muted} onChange={event => { const value = event.target.checked; setSnapshot(current => ({ ...current, muted:value })); void setPadMute(selected, value) }} /> MUTE</label>
-      <label><input type="checkbox" checked={snapshot.solo} onChange={event => { const value = event.target.checked; setSnapshot(current => ({ ...current, solo:value })); void setPadSolo(selected, value) }} /> SOLO</label>
       <label>VOICES <select value={snapshot.voiceLimit} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, voiceLimit:value })); void setVoiceLimit(selected, value) }}>{[1,2,3,4].map(count => <option key={count} value={count}>{count}</option>)}</select></label>
       <label>VELOCITY <select value={snapshot.velocityCurve} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, velocityCurve:value })); void setVelocityCurve(selected, value) }}><option value={0}>SOFT</option><option value={1}>LINEAR</option><option value={2}>HARD</option></select></label>
       <span>PAD LEVEL {Math.round(snapshot.padLevel * 100)}%</span>
     </section>
     {operationError && <p className="operation-error" role="alert">{operationError}</p>}
     <div className="performance-surface"><section className="pads" aria-label="Sixteen drum pads">{snapshot.pads.map((pad) =>
-      <button key={pad.midiNote}
+      <div key={pad.midiNote} className="pad-cell"
+        onDragOver={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' } }}
+        onDrop={event => { event.preventDefault(); event.stopPropagation(); handleDroppedFile(pad.index, event.dataTransfer.files[0]) }}>
+      <button
         data-pad-index={pad.index}
         className={'pad '+(pad.index === selected ? 'selected ' : '')+(pad.status === 'ready' ? 'loaded ' : '')+(pad.muted ? 'muted ' : '')+(pad.solo ? 'solo ' : '')+(pad.midiActive ? 'midi-trigger ' : '')+(auditionFlash === pad.index ? 'audition-trigger' : '')}
         onClick={() => { setContext(null); setPending(null); setOperationError(''); void selectPad(pad.index); if (pad.status === 'ready') { void audition(pad.index); setAuditionFlash(pad.index); window.clearTimeout(auditionTimer.current); auditionTimer.current = window.setTimeout(() => setAuditionFlash(null), 180) } }}
         onContextMenu={event => { event.preventDefault(); setPending(null); setContext({ pad: pad.index, x: event.clientX, y: event.clientY }); void selectPad(pad.index) }}
-        onDragOver={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' } }}
-        onDrop={event => { event.preventDefault(); event.stopPropagation(); handleDroppedFile(pad.index, event.dataTransfer.files[0]) }}
         aria-label={'Pad '+(pad.index+1)+', MIDI note '+pad.midiNote+', '+pad.status+(pad.muted ? ', muted' : '')+(pad.solo ? ', solo' : '')+'; left-click to audition, right-click for options'}
         aria-pressed={pad.index === selected}>
-        <span>{String(pad.index+1).padStart(2,'0')} · {dropProgress?.pad === pad.index ? 'IMPORT '+dropProgress.percent+'%' : pad.midiActive ? 'MIDI' : auditionFlash === pad.index ? 'AUDITION' : pad.muted ? 'MUTED' : pad.solo ? 'SOLO' : pad.status.toUpperCase()}</span>
+        <span>{String(pad.index+1).padStart(2,'0')} · {dropProgress?.pad === pad.index ? 'IMPORT '+dropProgress.percent+'%' : pad.midiActive ? 'MIDI' : auditionFlash === pad.index ? 'AUDITION' : pad.status.toUpperCase()}</span>
         <b>{pad.sampleName || 'UNASSIGNED'}</b>
         <span>MIDI {pad.midiNote}</span>
-      </button>)}</section>
+      </button>
+      <span className="pad-toggles">
+        <button type="button" className={'pad-toggle mute'+(pad.muted ? ' is-on' : '')}
+          aria-label={'Mute pad '+(pad.index+1)} aria-pressed={pad.muted}
+          onClick={() => togglePadFlag(pad.index, 'muted')}>M</button>
+        <button type="button" className={'pad-toggle solo'+(pad.solo ? ' is-on' : '')}
+          aria-label={'Solo pad '+(pad.index+1)} aria-pressed={pad.solo}
+          onClick={() => togglePadFlag(pad.index, 'solo')}>S</button>
+      </span></div>)}</section>
       <label className="master-fader"><span>MASTER<br/>GAIN</span>
         <span className="master-fader-body">
           <input type="range" min="0" max="1" step="0.01" value={snapshot.masterGain}

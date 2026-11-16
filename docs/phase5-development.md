@@ -15,6 +15,7 @@ Development began 15 November 2026 on `phase5-shaping-filters-modulation`, based
 - Compacted the tab content so it needs no internal scrolling: reduced rotary sizes, narrowed waveform and envelope preview areas, placed waveform frame knobs beside the trace and view/tuning controls below it. Removed the sampler subtitle and the always-visible source rate, duration and successful-edit message from the main display. Import and error messages remain visible when relevant.
 - Embedded the supplied Honk font for the HYPERREAL logo and Pixelify Sans for the selected pad/MIDI label, sample title and status. Added an eight-segment post-gain output meter alongside the Master Gain fader: four green, two amber and two red LEDs, with a short clip hold. Rotary value arcs now stop at each knob's indicator.
 - Changed the master meter to separate left and right rows of eight smaller LEDs beneath the fader. Each row reads its own post-gain output channel and clip hold; the rows are labelled L and R.
+- Moved Mode, Choke Group, Voices and Velocity into a separate black screen with green LED-style labels and selects. Removed Mute and Solo from that strip and put small, independently highlighted M and S buttons in the top-right corner of every pad. Corrected the editing display's uneven border and gave the settings strip its own spacing below it.
 
 ## Checked locally
 
@@ -28,8 +29,10 @@ The automation presentation slice passes the React/TypeScript build, Release VST
 
 The font, meter and rotary arc update passes the production UI build, Release VST3 build, both native suites and pluginval strictness 5. A headless screenshot confirms that both embedded fonts render and that the stereo meter fits beneath the fader. Processor regressions use left-only and right-only stereo fixtures, trigger overlapping notes past 0 dBFS, and check that only the active channel clips. The left meter and hold also decay on silence. The knob arc now uses the value-dependent SVG dash length rather than the former fixed CSS dash. Cubase visual and audio behavior remains to be checked in the combined host pass.
 
+The pad control layout passes the production UI build, Release VST3 build and pluginval strictness 5. Headless previews at 900 px and 560 px show that the settings screen clears the editing display border, all four selects remain visible, and per-pad M/S controls and pad status fit at both widths. Existing processor regressions cover the mute and solo commands; the new per-pad button interaction awaits the combined Cubase pass.
+
 ## Remaining Phase 5 work
 
 - Check visible host-originated automation, sustained slider drags, range ergonomics and envelope graphs in Cubase.
 - Percussion listening checks, Cubase automation/drag checks and any issues those reveal. Extend full-chain rendered-audio comparisons if host listening uncovers a mismatch.
-- Combined Phase 4/5 Cubase checks at the end of Phase 5. The current stereo-meter VST3 is installed in the per-user VST3 folder; previous builds are backed up under ignored `build/host-backup`. Its installed binary SHA-256 matches the Release build (`29AC8E39E13EA0244A7B46F9258BFFEB841FA7522F67846236AD27030F2DACF8`). Cubase checks remain open.
+- Combined Phase 4/5 Cubase checks at the end of Phase 5. The current pad-settings-screen VST3 is installed in the per-user VST3 folder; previous builds are backed up under ignored `build/host-backup`. Its installed binary SHA-256 matches the Release build (`E2C3073B054B2E14C4C7BC31431295A2FA140780119DB2CE7CB852D989ACA07F`). Cubase checks remain open.
