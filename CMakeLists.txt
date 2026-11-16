@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(HYPERREAL VERSION 0.4.0 LANGUAGES C CXX)
+project(HYPERREAL VERSION 0.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,6 +22,8 @@ juce_add_binary_data(HYPERREAL_Assets SOURCES
     packages/ui/dist/index.html
     packages/ui/dist/assets/app.js
     packages/ui/dist/assets/style.css
+    packages/ui/dist/assets/Honk.ttf
+    packages/ui/dist/assets/PixelifySans.ttf
 )
 juce_add_plugin(HYPERREAL
     COMPANY_NAME "HYPERREAL"

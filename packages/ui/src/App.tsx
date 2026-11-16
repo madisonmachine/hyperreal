@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { audition, cancelLoad, chooseSample, clearPad, copyPad, importDroppedFile, pastePad, readSnapshot, selectPad, setChokeGroup, setMasterGain, setPadMode, setPadMute, setPadSolo, setVelocityCurve, setVoiceLimit, swapPads, type Snapshot } from './bridge'
 import WaveformEditor from './WaveformEditor'
+import AmplitudeEditor from './AmplitudeEditor'
+import FilterEditor from './FilterEditor'
+import LfoEditor from './LfoEditor'
 
 const initial: Snapshot = {
   schemaVersion: 2, selectedPad: 0,
@@ -11,9 +14,14 @@ const initial: Snapshot = {
   sampleRate: 0, sourceFrames: 0, sampleRevision: 0,
   trimStart: 0, trimEnd: 0, fadeInFrames: 0, fadeOutFrames: 0,
   reverse: false, playbackFrame: -1, playbackSpeed: 0,
-  masterGain: 1, padLevel: 1, padMode: 0, chokeGroup: 0,
+  masterGain: 1, masterPeakLeft: 0, masterPeakRight: 0, masterClipLeft: false, masterClipRight: false,
+  padLevel: 1, padMode: 0, chokeGroup: 0,
   muted: false, solo: false, clipboardReady: false,
-  voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0
+  voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0,
+  ampAttack: 0, ampDecay: 0, ampSustain: 1, ampRelease: 0,
+  filterMode: 0, filterCutoff: 20000, filterResonance: 0.707, filterDepth: 0,
+  filterAttack: 0, filterDecay: 0, filterSustain: 1, filterRelease: 0,
+  lfoDestination: 0, lfoShape: 0, lfoRate: 1, lfoDepth: 0, lfoPhaseMode: 0
 }
 
 export default function App() {
@@ -22,7 +30,7 @@ export default function App() {
   const [pending, setPending] = useState<{ kind: 'paste'|'swap'|'clear'; pad: number; otherPad?: number } | null>(null)
   const [context, setContext] = useState<{ pad: number; x: number; y: number } | null>(null)
   const [dropProgress, setDropProgress] = useState<{ pad: number; percent: number } | null>(null)
-  const [waveformOpen, setWaveformOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<'waveform'|'amp'|'filter'|'lfo'>('waveform')
   const [auditionFlash, setAuditionFlash] = useState<number | null>(null)
   const auditionTimer = useRef<number | undefined>(undefined)
   const [operationError, setOperationError] = useState('')
@@ -55,9 +63,9 @@ export default function App() {
       } finally { inFlight = false }
     }
     void refresh()
-    const timer = window.setInterval(() => void refresh(), waveformOpen ? 50 : 250)
+    const timer = window.setInterval(() => void refresh(), activeTab === 'waveform' ? 50 : 250)
     return () => { alive = false; window.clearInterval(timer); window.clearTimeout(auditionTimer.current) }
-  }, [waveformOpen])
+  }, [activeTab])
 
   const selected = snapshot.selectedPad
   const selectedLabel = String(selected + 1).padStart(2, '0')
@@ -79,45 +87,102 @@ export default function App() {
     setPending(null)
     setContext(null)
   }
+  const togglePadFlag = (pad: number, flag: 'muted'|'solo') => {
+    const value = !snapshot.pads[pad][flag]
+    setSnapshot(current => ({
+      ...current,
+      pads: current.pads.map(item => item.index === pad ? { ...item, [flag]: value } : item),
+      ...(current.selectedPad === pad ? { [flag]: value } : {})
+    }))
+    void (flag === 'muted' ? setPadMute(pad, value) : setPadSolo(pad, value))
+  }
   return <main className="chassis"
     onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }}
     onDrop={event => { event.preventDefault(); handleDroppedFile(selected, event.dataTransfer.files[0]) }}>
-    <header><div><strong>HYPERREAL</strong><small>16 PAD DRUM SAMPLER</small></div><span>PHASE 4 DEVELOPMENT</span></header>
-    <section className="display" aria-live="polite">
+    <header><strong>HYPERREAL</strong></header>
+    <section className="display">
       <div className="display-row"><span>PAD {selectedLabel} / MIDI {selected + 36}</span><span>{snapshot.status.toUpperCase()}</span></div>
       <h1>{snapshot.sampleName || 'NO SAMPLE LOADED'}</h1>
-      <div className="display-row"><span>{snapshot.sampleRate ? (snapshot.sampleRate/1000).toFixed(1)+' KHZ' : '-- KHZ'}</span><span>{snapshot.durationSeconds ? snapshot.durationSeconds.toFixed(2)+' SEC' : '-- SEC'}</span></div>
-      <p>{snapshot.message || 'RIGHT-CLICK A PAD TO LOAD A SAMPLE, OR DROP A FILE ON IT'}</p>
+      {(snapshot.status === 'error' || snapshot.status === 'loading') && snapshot.message &&
+        <p className="display-notice" role="status">{snapshot.message}</p>}
       {snapshot.status === 'loading' && <button className="cancel-load" onClick={() => void cancelLoad(selected)}>CANCEL LOAD</button>}
+      <div className="display-tabs" role="tablist" aria-label="Selected pad editing">
+        {([['waveform', 'WAVEFORM'], ['amp', 'AMP ENVELOPE'], ['filter', 'FILTER'], ['lfo', 'LFO']] as const)
+          .map(([tab, label]) => <button key={tab} id={`tab-${tab}`} role="tab"
+            aria-selected={activeTab === tab} aria-controls="editing-panel"
+            tabIndex={activeTab === tab ? 0 : -1}
+            onClick={() => setActiveTab(tab)}
+            onKeyDown={event => {
+              if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+              event.preventDefault()
+              const order = ['waveform', 'amp', 'filter', 'lfo'] as const
+              const next = order[(order.indexOf(activeTab) + (event.key === 'ArrowRight' ? 1 : 3)) % 4]
+              setActiveTab(next)
+              document.getElementById(`tab-${next}`)?.focus()
+            }}>{label}</button>)}
+      </div>
+      <div className="display-tab-panel" id="editing-panel" role="tabpanel"
+        aria-labelledby={`tab-${activeTab}`}>
+        {activeTab === 'waveform' && <WaveformEditor key={selected} snapshot={snapshot} />}
+        {activeTab === 'amp' && <AmplitudeEditor key={selected} snapshot={snapshot} />}
+        {activeTab === 'filter' && <FilterEditor key={selected} snapshot={snapshot} />}
+        {activeTab === 'lfo' && <LfoEditor key={selected} snapshot={snapshot} />}
+      </div>
     </section>
-    <label className="gain">MASTER GAIN <input type="range" min="0" max="1" step="0.01" value={snapshot.masterGain} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, masterGain:value })); void setMasterGain(value) }} /><output>{Math.round(snapshot.masterGain * 100)}%</output></label>
     <section className="pad-settings" aria-label={'Pad '+selectedLabel+' playback settings'}>
       <label>MODE <select value={snapshot.padMode} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, padMode:value })); void setPadMode(selected, value) }}><option value={0}>ONE-SHOT</option><option value={1}>GATE</option></select></label>
       <label>CHOKE GROUP <select value={snapshot.chokeGroup} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, chokeGroup:value })); void setChokeGroup(selected, value) }}>{[0,1,2,3,4].map(group => <option key={group} value={group}>{group === 0 ? 'OFF' : group}</option>)}</select></label>
-      <label><input type="checkbox" checked={snapshot.muted} onChange={event => { const value = event.target.checked; setSnapshot(current => ({ ...current, muted:value })); void setPadMute(selected, value) }} /> MUTE</label>
-      <label><input type="checkbox" checked={snapshot.solo} onChange={event => { const value = event.target.checked; setSnapshot(current => ({ ...current, solo:value })); void setPadSolo(selected, value) }} /> SOLO</label>
       <label>VOICES <select value={snapshot.voiceLimit} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, voiceLimit:value })); void setVoiceLimit(selected, value) }}>{[1,2,3,4].map(count => <option key={count} value={count}>{count}</option>)}</select></label>
       <label>VELOCITY <select value={snapshot.velocityCurve} onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, velocityCurve:value })); void setVelocityCurve(selected, value) }}><option value={0}>SOFT</option><option value={1}>LINEAR</option><option value={2}>HARD</option></select></label>
       <span>PAD LEVEL {Math.round(snapshot.padLevel * 100)}%</span>
     </section>
     {operationError && <p className="operation-error" role="alert">{operationError}</p>}
-    <section className="pads" aria-label="Sixteen drum pads">{snapshot.pads.map((pad) =>
-      <button key={pad.midiNote}
+    <div className="performance-surface"><section className="pads" aria-label="Sixteen drum pads">{snapshot.pads.map((pad) =>
+      <div key={pad.midiNote} className="pad-cell"
+        onDragOver={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' } }}
+        onDrop={event => { event.preventDefault(); event.stopPropagation(); handleDroppedFile(pad.index, event.dataTransfer.files[0]) }}>
+      <button
         data-pad-index={pad.index}
         className={'pad '+(pad.index === selected ? 'selected ' : '')+(pad.status === 'ready' ? 'loaded ' : '')+(pad.muted ? 'muted ' : '')+(pad.solo ? 'solo ' : '')+(pad.midiActive ? 'midi-trigger ' : '')+(auditionFlash === pad.index ? 'audition-trigger' : '')}
         onClick={() => { setContext(null); setPending(null); setOperationError(''); void selectPad(pad.index); if (pad.status === 'ready') { void audition(pad.index); setAuditionFlash(pad.index); window.clearTimeout(auditionTimer.current); auditionTimer.current = window.setTimeout(() => setAuditionFlash(null), 180) } }}
         onContextMenu={event => { event.preventDefault(); setPending(null); setContext({ pad: pad.index, x: event.clientX, y: event.clientY }); void selectPad(pad.index) }}
-        onDragOver={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' } }}
-        onDrop={event => { event.preventDefault(); event.stopPropagation(); handleDroppedFile(pad.index, event.dataTransfer.files[0]) }}
         aria-label={'Pad '+(pad.index+1)+', MIDI note '+pad.midiNote+', '+pad.status+(pad.muted ? ', muted' : '')+(pad.solo ? ', solo' : '')+'; left-click to audition, right-click for options'}
         aria-pressed={pad.index === selected}>
-        <span>{String(pad.index+1).padStart(2,'0')} · {dropProgress?.pad === pad.index ? 'IMPORT '+dropProgress.percent+'%' : pad.midiActive ? 'MIDI' : auditionFlash === pad.index ? 'AUDITION' : pad.muted ? 'MUTED' : pad.solo ? 'SOLO' : pad.status.toUpperCase()}</span>
+        <span>{String(pad.index+1).padStart(2,'0')} · {dropProgress?.pad === pad.index ? 'IMPORT '+dropProgress.percent+'%' : pad.midiActive ? 'MIDI' : auditionFlash === pad.index ? 'AUDITION' : pad.status.toUpperCase()}</span>
         <b>{pad.sampleName || 'UNASSIGNED'}</b>
         <span>MIDI {pad.midiNote}</span>
-      </button>)}</section>
-    <details className="waveform-panel" onToggle={event => setWaveformOpen(event.currentTarget.open)}>
-      <summary>WAVEFORM / SAMPLE EDIT</summary>{waveformOpen && <WaveformEditor key={snapshot.selectedPad} snapshot={snapshot} />}
-    </details>
+      </button>
+      <span className="pad-toggles">
+        <button type="button" className={'pad-toggle mute'+(pad.muted ? ' is-on' : '')}
+          aria-label={'Mute pad '+(pad.index+1)} aria-pressed={pad.muted}
+          onClick={() => togglePadFlag(pad.index, 'muted')}>M</button>
+        <button type="button" className={'pad-toggle solo'+(pad.solo ? ' is-on' : '')}
+          aria-label={'Solo pad '+(pad.index+1)} aria-pressed={pad.solo}
+          onClick={() => togglePadFlag(pad.index, 'solo')}>S</button>
+      </span></div>)}</section>
+      <label className="master-fader"><span>MASTER<br/>GAIN</span>
+        <span className="master-fader-body">
+          <input type="range" min="0" max="1" step="0.01" value={snapshot.masterGain}
+            onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, masterGain:value })); void setMasterGain(value) }} />
+          <span className="master-leds">
+            {(['Left', 'Right'] as const).map(channel => {
+              const peak = channel === 'Left' ? snapshot.masterPeakLeft : snapshot.masterPeakRight
+              const clip = channel === 'Left' ? snapshot.masterClipLeft : snapshot.masterClipRight
+              return <span key={channel} className="master-led-row" role="meter"
+                aria-label={`${channel} master output peak`} aria-valuemin={0} aria-valuemax={1}
+                aria-valuenow={Math.min(1, peak)}
+                aria-valuetext={clip ? 'CLIP' : `${Math.round(peak * 100)}% peak`}>
+                <span className="master-led-label" aria-hidden="true">{channel[0]}</span>
+                {[0.02, 0.04, 0.08, 0.16, 0.32, 0.5, 0.707, 1].map((threshold, index) =>
+                  <span key={threshold} className={'master-led '+(index < 4 ? 'green ' : index < 6 ? 'amber ' : 'red ')
+                    + ((peak >= threshold || (index === 7 && clip)) ? 'is-lit ' : '')
+                    + (index === 7 && clip ? 'is-clipping' : '')} />)}
+              </span>
+            })}
+          </span>
+        </span>
+        <output>{Math.round(snapshot.masterGain * 100)}%</output>
+      </label></div>
     {context && <>
       <div className="context-dismiss" onClick={() => { setContext(null); setPending(null) }} />
       <div className="pad-context" role="menu" aria-label={'Pad '+(context.pad+1)+' options'} style={{ left: Math.min(context.x, window.innerWidth - 210), top: Math.min(context.y, window.innerHeight - 270) }}>

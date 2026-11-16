@@ -57,6 +57,26 @@ void writeRampWav (const juce::File& file, int rate = 44100)
     for (int frame = 0; frame < frames; ++frame)
         write16 (wav, static_cast<unsigned int> ((frame + 1) * 100));
 }
+void writeToneWav (const juce::File& file)
+{
+    constexpr int frames = 4410;
+    std::ofstream wav (file.getFullPathName().toStdString(), std::ios::binary);
+    wav.write ("RIFF", 4);
+    write32 (wav, 36 + frames * 2);
+    wav.write ("WAVEfmt ", 8);
+    write32 (wav, 16);
+    write16 (wav, 1);
+    write16 (wav, 1);
+    write32 (wav, 44100);
+    write32 (wav, 88200);
+    write16 (wav, 2);
+    write16 (wav, 16);
+    wav.write ("data", 4);
+    write32 (wav, frames * 2);
+    for (int frame = 0; frame < frames; ++frame)
+        write16 (wav, static_cast<unsigned int> (static_cast<int> (
+            std::sin (2.0 * 3.141592653589793 * 250.0 * frame / 44100.0) * 12000.0)));
+}
 bool waitForReady (SampleEngine& engine, int pad)
 {
     for (int attempt = 0; attempt < 300; ++attempt)
@@ -774,6 +794,283 @@ int main()
     }
     fastSource.deleteFile();
     ramp.deleteFile();
+
+    SampleEngine envelopeEngine;
+    envelopeEngine.prepare (1000.0);
+    const auto envelopeSource = folder.getChildFile ("hyperreal-phase5-envelope.wav");
+    writeWav (envelopeSource, 6553);
+    envelopeEngine.requestLoad (0, envelopeSource);
+    if (! waitForReady (envelopeEngine, 0)
+        || ! envelopeEngine.setPadEdit (0, { 0, 4410, 0, 0, false }))
+        return 67;
+    envelopeSource.deleteFile();
+    SampleEngine::PlaybackSettings envelopeSettings {};
+    envelopeSettings[0].amplitude = { 0.01f, 0.01f, 0.5f, 0.02f };
+    juce::AudioBuffer<float> envelopeAudio (2, 128);
+    juce::MidiBuffer envelopeMidi;
+    envelopeMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                           static_cast<juce::uint8> (127)), 0);
+    envelopeEngine.process (envelopeAudio, envelopeMidi, envelopeSettings);
+    if (! near (envelopeAudio.getSample (0, 0), 0.02f)
+        || ! near (envelopeAudio.getSample (0, 9), 0.2f)
+        || ! near (envelopeAudio.getSample (0, 19), 0.1f)
+        || ! near (envelopeAudio.getSample (0, 40), 0.1f)
+        || envelopeAudio.getSample (0, 90) >= 0.08f
+        || ! near (envelopeAudio.getSample (0, 110), 0.0f))
+    {
+        std::cerr << "One-shot amplitude ADSR stages failed\n";
+        return 68;
+    }
+    envelopeEngine.prepare (1000.0);
+    envelopeSettings[0].amplitude.releaseSeconds = 0.2f;
+    envelopeEngine.process (envelopeAudio, envelopeMidi, envelopeSettings);
+    if (envelopeAudio.getSample (0, 95) >= 0.02f
+        || ! near (envelopeAudio.getSample (0, 110), 0.0f))
+    {
+        std::cerr << "Long release exceeded a short one-shot sample\n";
+        return 70;
+    }
+    envelopeEngine.prepare (1000.0);
+    envelopeSettings[0].gated = true;
+    envelopeSettings[0].amplitude.releaseSeconds = 0.02f;
+    envelopeMidi.addEvent (juce::MidiMessage::noteOff (1, 36), 40);
+    envelopeEngine.process (envelopeAudio, envelopeMidi, envelopeSettings);
+    if (! near (envelopeAudio.getSample (0, 39), 0.1f)
+        || envelopeAudio.getSample (0, 50) >= 0.08f
+        || ! near (envelopeAudio.getSample (0, 70), 0.0f))
+    {
+        std::cerr << "Gated amplitude ADSR release failed\n";
+        return 69;
+    }
+
+    SampleEngine filterEngine;
+    filterEngine.prepare (1000.0);
+    const auto filterSource = folder.getChildFile ("hyperreal-phase5-filter.wav");
+    writeWav (filterSource, 6553);
+    filterEngine.requestLoad (0, filterSource);
+    if (! waitForReady (filterEngine, 0)
+        || ! filterEngine.setPadEdit (0, { 0, 4410, 0, 0, false }))
+        return 71;
+    filterSource.deleteFile();
+    SampleEngine::PlaybackSettings filterSettings {};
+    filterSettings[0].filter.cutoffHz = 100.0f;
+    filterSettings[0].filter.resonance = 0.707f;
+    juce::AudioBuffer<float> filterAudio (2, 128);
+    juce::MidiBuffer filterMidi;
+    filterMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                         static_cast<juce::uint8> (127)), 0);
+    filterSettings[0].filter.mode = 1;
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    const auto lowPassDc = filterAudio.getSample (0, 60);
+    filterEngine.prepare (1000.0);
+    filterSettings[0].filter.mode = 2;
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    const auto highPassDc = filterAudio.getSample (0, 60);
+    filterEngine.prepare (1000.0);
+    filterSettings[0].filter.mode = 3;
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    const auto bandPassDc = filterAudio.getSample (0, 60);
+    if (! near (lowPassDc, 0.2f) || std::abs (highPassDc) > 0.02f
+        || std::abs (bandPassDc) > 0.02f)
+    {
+        std::cerr << "Filter modes did not produce expected DC response: "
+                  << lowPassDc << ' ' << highPassDc << ' ' << bandPassDc << "\n";
+        return 72;
+    }
+    const auto toneSource = folder.getChildFile ("hyperreal-phase5-filter-tone.wav");
+    writeToneWav (toneSource);
+    filterEngine.requestLoad (0, toneSource);
+    if (! waitForReady (filterEngine, 0)
+        || ! filterEngine.setPadEdit (0, { 0, 4410, 0, 0, false }))
+        return 73;
+    toneSource.deleteFile();
+    filterSettings[0].filter.mode = 1;
+    filterSettings[0].filter.cutoffHz = 50.0f;
+    filterSettings[0].filter.envelopeDepthSemitones = 0.0f;
+    filterEngine.prepare (1000.0);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    const auto quietRms = filterAudio.getRMSLevel (0, 30, 50);
+    filterSettings[0].filter.envelopeDepthSemitones = 24.0f;
+    filterEngine.prepare (1000.0);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    const auto openRms = filterAudio.getRMSLevel (0, 30, 50);
+    if (openRms < quietRms * 2.0f)
+    {
+        std::cerr << "Bipolar filter-envelope depth did not open the filter: "
+                  << quietRms << ' ' << openRms << "\n";
+        return 74;
+    }
+    filterSettings[0].filter.envelopeDepthSemitones = -24.0f;
+    filterEngine.prepare (1000.0);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    const auto closedRms = filterAudio.getRMSLevel (0, 30, 50);
+    if (closedRms >= quietRms * 0.8f)
+    {
+        std::cerr << "Negative filter-envelope depth did not close the filter: "
+                  << quietRms << ' ' << closedRms << "\n";
+        return 77;
+    }
+    filterSettings[0].filter.envelopeDepthSemitones = 24.0f;
+    filterSettings[0].filter.envelope.attackSeconds = 0.05f;
+    filterEngine.prepare (1000.0);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    const auto earlyRms = filterAudio.getRMSLevel (0, 15, 15);
+    const auto lateRms = filterAudio.getRMSLevel (0, 65, 15);
+    if (lateRms <= earlyRms * 1.4f)
+    {
+        std::cerr << "Filter-envelope attack did not move cutoff: "
+                  << earlyRms << ' ' << lateRms << "\n";
+        return 75;
+    }
+    filterSettings[0].filter.envelope.attackSeconds = 0.0f;
+    filterSettings[0].filter.envelopeDepthSemitones = 0.0f;
+    filterEngine.prepare (1000.0);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    const auto singleVoice = filterAudio.getSample (0, 20);
+    filterEngine.prepare (1000.0);
+    filterMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                         static_cast<juce::uint8> (127)), 0);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    if (std::abs (filterAudio.getSample (0, 20) - singleVoice * 2.0f) > 0.01f)
+    {
+        std::cerr << "Overlapping voices shared filter state\n";
+        return 78;
+    }
+    filterMidi.clear();
+    filterMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                         static_cast<juce::uint8> (127)), 0);
+    filterSettings[0].filter.resonance = 10.0f;
+    filterSettings[0].filter.cutoffHz = 450.0f;
+    filterSettings[0].filter.envelopeDepthSemitones = 48.0f;
+    filterEngine.prepare (1000.0);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    for (int frame = 0; frame < filterAudio.getNumSamples(); ++frame)
+        if (! std::isfinite (filterAudio.getSample (0, frame))
+            || std::abs (filterAudio.getSample (0, frame)) > 8.0f)
+        {
+            std::cerr << "Maximum-resonance filter produced unstable output\n";
+            return 76;
+        }
+    filterSettings[0].filter.mode = 0;
+    filterSettings[0].lfo = { 1, 2, 5.0f, 12.0f, 0 };
+    filterEngine.prepare (1000.0);
+    filterMidi.clear();
+    filterMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                         static_cast<juce::uint8> (127)), 0);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    std::array<float, 8> resetReference {};
+    for (int index = 0; index < 8; ++index)
+        resetReference[index] = filterAudio.getSample (0, 20 + index);
+    filterEngine.prepare (1000.0);
+    filterMidi.clear();
+    filterMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                         static_cast<juce::uint8> (127)), 100);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    float resetDifference = 0.0f;
+    for (int index = 0; index < 8; ++index)
+        resetDifference += std::abs (filterAudio.getSample (0, 120 + index)
+                                     - resetReference[index]);
+    if (resetDifference > 0.001f)
+    {
+        std::cerr << "Reset-phase pitch LFO depended on note timing\n";
+        return 79;
+    }
+    filterSettings[0].lfo.phaseMode = 1;
+    filterEngine.prepare (1000.0);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    float freeDifference = 0.0f;
+    for (int index = 0; index < 8; ++index)
+        freeDifference += std::abs (filterAudio.getSample (0, 120 + index)
+                                    - resetReference[index]);
+    if (freeDifference < 0.05f)
+    {
+        std::cerr << "Free-running pitch LFO ignored elapsed pad time: "
+                  << freeDifference << " reference " << resetReference[1]
+                  << " free " << filterAudio.getSample (0, 121) << "\n";
+        return 80;
+    }
+    filterSettings[0].filter.mode = 1;
+    filterSettings[0].filter.cutoffHz = 50.0f;
+    filterSettings[0].filter.resonance = 0.707f;
+    filterSettings[0].filter.envelopeDepthSemitones = 0.0f;
+    filterSettings[0].lfo = { 2, 2, 5.0f, 24.0f, 1 };
+    filterEngine.prepare (1000.0);
+    filterMidi.clear();
+    filterMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                         static_cast<juce::uint8> (127)), 0);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    const auto openLfoRms = filterAudio.getRMSLevel (0, 20, 8);
+    filterEngine.prepare (1000.0);
+    filterMidi.clear();
+    filterMidi.addEvent (juce::MidiMessage::noteOn (1, 36,
+                         static_cast<juce::uint8> (127)), 100);
+    filterEngine.process (filterAudio, filterMidi, filterSettings);
+    const auto closedLfoRms = filterAudio.getRMSLevel (0, 120, 8);
+    if (openLfoRms <= closedLfoRms * 2.0f)
+    {
+        std::cerr << "Cutoff LFO did not follow free-running phase: "
+                  << openLfoRms << ' ' << closedLfoRms << "\n";
+        return 81;
+    }
+
+    SampleEngine::PlaybackSettings stressSettings {};
+    stressSettings[0].amplitude = { 0.002f, 0.005f, 0.7f, 0.01f };
+    stressSettings[0].filter = { 1, 200.0f, 10.0f, 48.0f,
+                                 { 0.002f, 0.005f, 0.5f, 0.01f } };
+    stressSettings[0].lfo = { 2, 0, 20.0f, 24.0f, 0 };
+    juce::AudioBuffer<float> stressAudio (2, 128);
+    juce::MidiBuffer stressMidi;
+    for (const double hostRate : { 1000.0, 44100.0, 96000.0 })
+        for (int mode = 1; mode <= 3; ++mode)
+            for (int shape = 0; shape < 4; ++shape)
+            {
+                filterEngine.prepare (hostRate);
+                stressSettings[0].filter.mode = mode;
+                stressSettings[0].lfo.shape = shape;
+                stressSettings[0].lfo.destination = shape % 2 == 0 ? 2 : 1;
+                bool audible = false;
+                for (int block = 0; block < 80; ++block)
+                {
+                    stressSettings[0].filter.cutoffHz = block % 2 == 0 ? 20.0f : 20000.0f;
+                    stressSettings[0].filter.envelopeDepthSemitones = block % 2 == 0 ? 48.0f : -48.0f;
+                    stressMidi.clear();
+                    if (block % 8 == 0)
+                        stressMidi.addEvent (juce::MidiMessage::noteOn (
+                            1, 36, static_cast<juce::uint8> (127)), 0);
+                    filterEngine.process (stressAudio, stressMidi, stressSettings);
+                    for (int channel = 0; channel < stressAudio.getNumChannels(); ++channel)
+                        for (int frame = 0; frame < stressAudio.getNumSamples(); ++frame)
+                        {
+                            const auto sample = stressAudio.getSample (channel, frame);
+                            if (! std::isfinite (sample) || std::abs (sample) > 64.0f)
+                            {
+                                std::cerr << "Fast full-chain modulation produced unstable output\n";
+                                return 82;
+                            }
+                            audible = audible || std::abs (sample) > 1.0e-5f;
+                        }
+                }
+                if (! audible)
+                {
+                    std::cerr << "Full-chain stress case produced no audio\n";
+                    return 83;
+                }
+            }
+    filterEngine.prepare (44100.0);
+    stressSettings[0].filter.mode = 1;
+    stressSettings[0].lfo = { 2, 0, 20.0f, 24.0f, 1 };
+    stressMidi.clear();
+    stressMidi.addEvent (juce::MidiMessage::noteOn (
+        1, 36, static_cast<juce::uint8> (127)), 0);
+    filterEngine.process (stressAudio, stressMidi, stressSettings);
+    stressMidi.clear();
+    for (int block = 0; block < 3446; ++block)
+        filterEngine.process (stressAudio, stressMidi, stressSettings);
+    if (stressAudio.getMagnitude (0, stressAudio.getNumSamples()) > 1.0e-7f)
+    {
+        std::cerr << "Full-chain long-silence tail did not end\n";
+        return 84;
+    }
 
     std::cout << "SampleEngine multi-pad smoke passed\n";
     return 0;

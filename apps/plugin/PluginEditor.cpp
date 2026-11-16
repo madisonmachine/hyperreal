@@ -139,6 +139,18 @@ HyperrealAudioProcessorEditor::HyperrealAudioProcessorEditor (HyperrealAudioProc
                    {
                        complete (arguments.size() == 1 && processor.setPadFineTune (arguments[0]));
                    })
+                   .withNativeFunction ("setPadAmplitude", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && processor.setPadAmplitude (arguments[0]));
+                   })
+                   .withNativeFunction ("setPadFilter", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && processor.setPadFilter (arguments[0]));
+                   })
+                   .withNativeFunction ("setPadLfo", [this] (const auto& arguments, auto complete)
+                   {
+                       complete (arguments.size() == 1 && processor.setPadLfo (arguments[0]));
+                   })
                    .withNativeFunction ("selectPad", [this] (const auto& arguments, auto complete)
                    {
                        const auto pad = arguments.size() == 1
@@ -347,6 +359,14 @@ HyperrealAudioProcessorEditor::getResource (const juce::String& path)
     if (path == "/assets/style.css")
         return juce::WebBrowserComponent::Resource {
             copyResource (BinaryData::style_css, BinaryData::style_cssSize), "text/css" };
+
+    if (path == "/assets/Honk.ttf")
+        return juce::WebBrowserComponent::Resource {
+            copyResource (BinaryData::Honk_ttf, BinaryData::Honk_ttfSize), "font/ttf" };
+
+    if (path == "/assets/PixelifySans.ttf")
+        return juce::WebBrowserComponent::Resource {
+            copyResource (BinaryData::PixelifySans_ttf, BinaryData::PixelifySans_ttfSize), "font/ttf" };
 
     return std::nullopt;
 }

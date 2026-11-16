@@ -51,6 +51,9 @@ public:
     bool setPadEdit (const juce::var& command);
     bool setPadCoarseTune (const juce::var& command);
     bool setPadFineTune (const juce::var& command);
+    bool setPadAmplitude (const juce::var& command);
+    bool setPadFilter (const juce::var& command);
+    bool setPadLfo (const juce::var& command);
     bool copyPad (int pad);
     bool pastePad (int pad);
     bool swapPads (int first, int second);
@@ -61,8 +64,8 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     bool setPadDiscreteParameter (const juce::var& command, const char* name,
                                   int maximum, int minimum = 0);
-    std::array<float, 9> readPadSettings (int pad) const;
-    void applyPadSettings (int pad, const std::array<float, 9>& values);
+    std::array<float, 26> readPadSettings (int pad) const;
+    void applyPadSettings (int pad, const std::array<float, 26>& values);
 
     juce::AudioProcessorValueTreeState parameters;
     SampleEngine engine;
@@ -75,7 +78,14 @@ private:
     std::array<std::atomic<float>*, SampleEngine::padCount> padVelocityCurveParameters {};
     std::array<std::atomic<float>*, SampleEngine::padCount> padCoarseTuneParameters {};
     std::array<std::atomic<float>*, SampleEngine::padCount> padFineTuneParameters {};
-    std::array<float, 9> clipboardSettings { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 4.0f, 1.0f, 0.0f, 0.0f };
+    std::array<std::array<std::atomic<float>*, 4>, SampleEngine::padCount> padAmplitudeParameters {};
+    std::array<std::array<std::atomic<float>*, 8>, SampleEngine::padCount> padFilterParameters {};
+    std::array<std::array<std::atomic<float>*, 5>, SampleEngine::padCount> padLfoParameters {};
+    std::array<float, 26> clipboardSettings { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 4.0f, 1.0f, 0.0f, 0.0f,
+                                               0.0f, 0.0f, 1.0f, 0.0f,
+                                               0.0f, 20000.0f, 0.707f, 0.0f,
+                                               0.0f, 0.0f, 1.0f, 0.0f,
+                                               0.0f, 0.0f, 1.0f, 0.0f, 0.0f };
     bool clipboardSettingsReady = false;
     std::atomic<int> selectedPad { 0 };
     std::array<std::atomic<unsigned int>, SampleEngine::padCount> padClickCounters {};
@@ -84,5 +94,9 @@ private:
     double currentSampleRate = 44100.0;
     bool transportWasPlaying = false;
     juce::SmoothedValue<float> smoothedMasterGain;
+    std::array<float, 2> meterEnvelope {}; // Audio-thread state, published as a transient snapshot.
+    std::array<int, 2> clipHoldFrames {};
+    std::array<std::atomic<float>, 2> masterMeterPeak {};
+    std::array<std::atomic<bool>, 2> masterMeterClip {};
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HyperrealAudioProcessor)
 };

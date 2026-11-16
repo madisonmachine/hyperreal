@@ -17,6 +17,29 @@ public:
     static constexpr int padCount = 16;
     static constexpr int firstMidiNote = 36;
     static constexpr int maxVoices = 64;
+    struct Envelope
+    {
+        float attackSeconds = 0.0f;
+        float decaySeconds = 0.0f;
+        float sustain = 1.0f;
+        float releaseSeconds = 0.0f;
+    };
+    struct FilterSettings
+    {
+        int mode = 0; // Off, low-pass, high-pass, band-pass.
+        float cutoffHz = 20000.0f;
+        float resonance = 0.707f; // Q.
+        float envelopeDepthSemitones = 0.0f;
+        Envelope envelope;
+    };
+    struct LfoSettings
+    {
+        int destination = 0; // Off, pitch, cutoff.
+        int shape = 0; // Sine, triangle, square, saw.
+        float rateHz = 1.0f;
+        float depthSemitones = 0.0f;
+        int phaseMode = 0; // Reset per voice, free-running per pad.
+    };
     struct PadPlaybackSettings
     {
         bool gated = false;
@@ -28,6 +51,9 @@ public:
         int velocityCurve = 1;
         int coarseSemitones = 0;
         float fineCents = 0.0f;
+        Envelope amplitude;
+        FilterSettings filter;
+        LfoSettings lfo;
     };
     using PlaybackSettings = std::array<PadPlaybackSettings, padCount>;
     struct Edit
@@ -105,6 +131,34 @@ private:
         int releaseRemaining = 0;
         int releaseTotal = 0;
         double step = 0.0;
+        Envelope amplitude;
+        juce::uint64 envelopeAge = 0;
+        int envelopeReleaseRemaining = 0;
+        int envelopeReleaseTotal = 0;
+        float envelopeReleaseStart = 1.0f;
+        float envelopeLevel = 1.0f;
+        bool envelopeReleased = false;
+        FilterSettings filter;
+        juce::uint64 filterEnvelopeAge = 0;
+        int filterReleaseRemaining = 0;
+        int filterReleaseTotal = 0;
+        float filterReleaseStart = 1.0f;
+        float filterEnvelopeLevel = 1.0f;
+        bool filterEnvelopeReleased = false;
+        std::array<double, 2> filterIntegrator1 {};
+        std::array<double, 2> filterIntegrator2 {};
+        double filterG = 0.0;
+        double filterK = 1.0 / 0.707;
+        double filterTargetG = 0.0;
+        double filterTargetK = 1.0 / 0.707;
+        int filterUpdateCountdown = 0;
+        LfoSettings lfo;
+        double lfoPhase = 0.0;
+        float lfoDepthCurrent = 0.0f;
+        float lfoValueCurrent = 0.0f;
+        float lfoValueTarget = 0.0f;
+        int lfoUpdateCountdown = 0;
+        double lfoPitchRatio = 1.0;
     };
 
     static bool readSample (juce::InputStream& input, std::unique_ptr<Sample>& sample,
@@ -121,6 +175,8 @@ private:
     void noteOff (int pad, int midiChannel) noexcept;
     void releaseAll (int midiChannel = 0) noexcept;
     void beginRelease (Voice& voice) noexcept;
+    void beginEnvelopeRelease (Voice& voice, int maximumFrames = 0) noexcept;
+    void beginFilterEnvelopeRelease (Voice& voice, int maximumFrames = 0) noexcept;
     void renderVoice (Voice& voice, std::atomic<const Sample*>& pointer,
                       juce::AudioBuffer<float>& output, int begin, int end,
                       const PlaybackSettings& settings) noexcept;
@@ -164,6 +220,7 @@ private:
     std::array<Voice, maxVoices> fadeTails {};
     std::array<unsigned int, padCount> auditionSeen {};
     std::array<bool, padCount> audiblePads {};
+    std::array<double, padCount> freeLfoPhases {};
     juce::uint64 nextSequence = 1;
     double hostRate = 44100.0;
 };
