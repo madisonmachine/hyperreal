@@ -16,6 +16,7 @@ Development began 15 November 2026 on `phase5-shaping-filters-modulation`, based
 - Embedded the supplied Honk font for the HYPERREAL logo and Pixelify Sans for the selected pad/MIDI label, sample title and status. Added an eight-segment post-gain output meter alongside the Master Gain fader: four green, two amber and two red LEDs, with a short clip hold. Rotary value arcs now stop at each knob's indicator.
 - Changed the master meter to separate left and right rows of eight smaller LEDs beneath the fader. Each row reads its own post-gain output channel and clip hold; the rows are labelled L and R.
 - Moved Mode, Choke Group, Voices and Velocity into a separate black screen with green LED-style labels and selects. Removed Mute and Solo from that strip and put small, independently highlighted M and S buttons in the top-right corner of every pad. Corrected the editing display's uneven border and gave the settings strip its own spacing below it.
+- Reduced the settings screen labels from 13 px to 11 px, approximately 15%, and set the dropdown text to the same 11 px size at all editor widths.
 
 ## Checked locally
 
@@ -31,8 +32,10 @@ The font, meter and rotary arc update passes the production UI build, Release VS
 
 The pad control layout passes the production UI build, Release VST3 build and pluginval strictness 5. Headless previews at 900 px and 560 px show that the settings screen clears the editing display border, all four selects remain visible, and per-pad M/S controls and pad status fit at both widths. Existing processor regressions cover the mute and solo commands; the new per-pad button interaction awaits the combined Cubase pass.
 
+The smaller settings typography passes the production UI build, Release VST3 build and pluginval strictness 5. A 900 px headless preview confirms that the four labels and dropdown values match in size and remain legible. Cubase inspection remains in the combined host pass.
+
 ## Remaining Phase 5 work
 
 - Check visible host-originated automation, sustained slider drags, range ergonomics and envelope graphs in Cubase.
 - Percussion listening checks, Cubase automation/drag checks and any issues those reveal. Extend full-chain rendered-audio comparisons if host listening uncovers a mismatch.
-- Combined Phase 4/5 Cubase checks at the end of Phase 5. The current pad-settings-screen VST3 is installed in the per-user VST3 folder; previous builds are backed up under ignored `build/host-backup`. Its installed binary SHA-256 matches the Release build (`E2C3073B054B2E14C4C7BC31431295A2FA140780119DB2CE7CB852D989ACA07F`). Cubase checks remain open.
+- Combined Phase 4/5 Cubase checks at the end of Phase 5. The current settings-typography VST3 is installed in the per-user VST3 folder; previous builds are backed up under ignored `build/host-backup`. Its installed binary SHA-256 matches the Release build (`502FCC57E5252B4944C3F4A0124536ABF49B19DFF082BC20016115AB2BC65ECB`). Cubase checks remain open.
