@@ -37,7 +37,7 @@ The Phase 4 editor applies each valid trim, fade or reverse change when it is ma
 
 Phase 5 adds selected-pad amplitude ADSR values in the existing snapshot and a bridge command version 8 for setting one amplitude parameter. Filter mode, cutoff, resonance, bipolar depth and independent filter ADSR use bridge command version 9. The custom editor displays host-backed values and schematic envelope graphs. LFO destination, shape, rate, depth and phase use bridge command version 10. The editor shows a waveform preview. Copy, paste, swap and clear include these parameters.
 
-The snapshot also includes transient `masterPeak` and `masterClip` readings from the post-gain audio output. They are meter display data, not host parameters or saved state. The peak decays with a 0.45-second time constant; a block at or above 0 dBFS holds the clip flag for 0.65 seconds. The eight Master Gain LEDs use peak thresholds of 0.02, 0.04, 0.08 and 0.16 (green), 0.32 and 0.5 (amber), and 0.707 and 1.0 (red). The top red LED also follows the held clip flag.
+The snapshot includes transient `masterPeakLeft`, `masterPeakRight`, `masterClipLeft` and `masterClipRight` readings from the post-gain stereo output. They are meter display data, not host parameters or saved state. Each channel's peak decays with a 0.45-second time constant; a block at or above 0 dBFS holds that channel's clip flag for 0.65 seconds. Each of the two Master Gain LED rows uses peak thresholds of 0.02, 0.04, 0.08 and 0.16 (green), 0.32 and 0.5 (amber), and 0.707 and 1.0 (red). The final red LED also follows its channel's held clip flag.
 
 ## Planned portable data
 

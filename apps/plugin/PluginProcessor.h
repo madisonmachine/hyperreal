@@ -94,9 +94,9 @@ private:
     double currentSampleRate = 44100.0;
     bool transportWasPlaying = false;
     juce::SmoothedValue<float> smoothedMasterGain;
-    float meterEnvelope = 0.0f; // Audio-thread state, published as a transient snapshot.
-    int clipHoldFrames = 0;
-    std::atomic<float> masterMeterPeak { 0.0f };
-    std::atomic<bool> masterMeterClip { false };
+    std::array<float, 2> meterEnvelope {}; // Audio-thread state, published as a transient snapshot.
+    std::array<int, 2> clipHoldFrames {};
+    std::array<std::atomic<float>, 2> masterMeterPeak {};
+    std::array<std::atomic<bool>, 2> masterMeterClip {};
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HyperrealAudioProcessor)
 };

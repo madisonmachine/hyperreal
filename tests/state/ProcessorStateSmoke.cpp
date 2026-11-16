@@ -417,11 +417,13 @@ int main()
         output.writeByte (1);
         output.writeString ("phase2-legacy.wav");
         output.writeDouble (44100.0);
-        output.writeInt (1);
+        output.writeInt (2);
         output.writeInt (frames);
         for (int frame = 0; frame < frames; ++frame)
             output.writeFloat (static_cast<float> (
                 static_cast<int> (std::sin (frame * 0.1) * 16000.0) / 32768.0));
+        for (int frame = 0; frame < frames; ++frame)
+            output.writeFloat (0.0f);
     }
 
     HyperrealAudioProcessor restored;
@@ -513,20 +515,64 @@ int main()
             1, 36, static_cast<juce::uint8> (127)), 0);
     migrated.processBlock (audio, midi);
     const auto clipSnapshot = migrated.getSnapshot();
-    if (static_cast<double> (clipSnapshot.getProperty ("masterPeak", 0.0)) < 1.0
-        || ! static_cast<bool> (clipSnapshot.getProperty ("masterClip", false)))
+    if (static_cast<double> (clipSnapshot.getProperty ("masterPeakLeft", 0.0)) < 1.0
+        || ! static_cast<bool> (clipSnapshot.getProperty ("masterClipLeft", false))
+        || static_cast<double> (clipSnapshot.getProperty ("masterPeakRight", 1.0)) != 0.0
+        || static_cast<bool> (clipSnapshot.getProperty ("masterClipRight", true)))
     {
-        std::cerr << "Master meter missed a clipped output block\n";
+        std::cerr << "Stereo master meter missed a left-only clipped output block\n";
         return 1;
     }
     midi.clear();
     for (int block = 0; block < 350; ++block)
         migrated.processBlock (audio, midi);
     const auto quietSnapshot = migrated.getSnapshot();
-    if (static_cast<bool> (quietSnapshot.getProperty ("masterClip", true))
-        || static_cast<double> (quietSnapshot.getProperty ("masterPeak", 1.0)) >= 0.5)
+    if (static_cast<bool> (quietSnapshot.getProperty ("masterClipLeft", true))
+        || static_cast<bool> (quietSnapshot.getProperty ("masterClipRight", true))
+        || static_cast<double> (quietSnapshot.getProperty ("masterPeakLeft", 1.0)) >= 0.5
+        || static_cast<double> (quietSnapshot.getProperty ("masterPeakRight", 1.0)) != 0.0)
     {
         std::cerr << "Master meter did not release after silence\n";
+        return 1;
+    }
+    juce::MemoryBlock rightOnlyState;
+    {
+        juce::MemoryOutputStream output (rightOnlyState, false);
+        output.write ("HRP2", 4);
+        output.writeInt (2);
+        output.writeInt (static_cast<int> (phase2ParameterBytes.getSize()));
+        output.write (phase2ParameterBytes.getData(), phase2ParameterBytes.getSize());
+        output.writeByte (1);
+        output.writeString ("phase2-right-only.wav");
+        output.writeDouble (44100.0);
+        output.writeInt (2);
+        output.writeInt (frames);
+        for (int frame = 0; frame < frames; ++frame)
+            output.writeFloat (0.0f);
+        for (int frame = 0; frame < frames; ++frame)
+            output.writeFloat (static_cast<float> (
+                static_cast<int> (std::sin (frame * 0.1) * 16000.0) / 32768.0));
+    }
+    HyperrealAudioProcessor rightOnly;
+    rightOnly.setStateInformation (rightOnlyState.getData(), static_cast<int> (rightOnlyState.getSize()));
+    rightOnly.prepareToPlay (44100.0, 128);
+    auto* rightGain = new juce::DynamicObject();
+    rightGain->setProperty ("schemaVersion", 1);
+    rightGain->setProperty ("value", 1.0);
+    if (! rightOnly.setMasterGain (juce::var (rightGain)))
+        return 1;
+    midi.clear();
+    for (int voice = 0; voice < 4; ++voice)
+        midi.addEvent (juce::MidiMessage::noteOn (
+            1, 36, static_cast<juce::uint8> (127)), 0);
+    rightOnly.processBlock (audio, midi);
+    const auto rightSnapshot = rightOnly.getSnapshot();
+    if (static_cast<double> (rightSnapshot.getProperty ("masterPeakRight", 0.0)) < 1.0
+        || ! static_cast<bool> (rightSnapshot.getProperty ("masterClipRight", false))
+        || static_cast<double> (rightSnapshot.getProperty ("masterPeakLeft", 1.0)) != 0.0
+        || static_cast<bool> (rightSnapshot.getProperty ("masterClipLeft", true)))
+    {
+        std::cerr << "Stereo master meter missed a right-only clipped output block\n";
         return 1;
     }
     HyperrealAudioProcessor phase3Migrated;

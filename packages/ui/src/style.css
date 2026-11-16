@@ -94,12 +94,14 @@ header{margin-bottom:11px}
 .display-row,.display h1{font-family:PixelifySans,Consolas,monospace;font-weight:500;letter-spacing:.03em}
 .display-row{font-size:15px}
 .display h1{font-size:23px}
-.master-fader-body{display:flex;align-items:center;justify-content:center;gap:2px;min-height:232px}
-.master-leds{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;height:232px;width:13px;flex:none}
-.master-led{width:11px;height:11px;display:block;border-radius:50%;border:1px solid #555b55;background:#192019;box-shadow:inset 0 1px 3px #090d09}
+.master-fader-body{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;min-height:232px}
+.master-fader-body input[type=range]{height:208px;margin:0}
+.master-leds{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;width:100%;flex:none}
+.master-led-row{display:flex;align-items:center;justify-content:center;gap:1px;width:100%;height:8px}
+.master-led-label{width:7px;flex:none;color:#aaa597;font-size:7px;line-height:8px}
+.master-led{width:7px;height:7px;flex:none;display:block;border-radius:50%;border:1px solid #555b55;background:#192019;box-shadow:inset 0 1px 2px #090d09}
 .master-led.green.is-lit{background:#65d778;border-color:#a0edaa;box-shadow:0 0 7px #56d276,inset 0 0 3px #d5ffd8}
 .master-led.amber.is-lit{background:#e9b255;border-color:#f6d18b;box-shadow:0 0 7px #e4a13d,inset 0 0 3px #fff2bc}
 .master-led.red.is-lit{background:#eb5951;border-color:#ffaca4;box-shadow:0 0 8px #ed524a,inset 0 0 3px #ffe5df}
 .master-led.red.is-clipping{box-shadow:0 0 12px 3px #ef4a40,inset 0 0 3px #fff}
-.master-fader-body input[type=range]{margin:0}
-@media(max-width:700px){.master-fader-body,.master-leds{min-height:210px;height:210px}.master-leds{gap:5px;width:10px}.master-led{width:9px;height:9px}.chassis header strong{font-size:33px}}
+@media(max-width:700px){.master-fader-body{min-height:210px}.master-fader-body input[type=range]{height:186px}.master-led-row{gap:.5px}.master-led-label{width:5px}.master-led{width:6px;height:6px}.chassis header strong{font-size:33px}}
