@@ -22,6 +22,8 @@ juce_add_binary_data(HYPERREAL_Assets SOURCES
     packages/ui/dist/index.html
     packages/ui/dist/assets/app.js
     packages/ui/dist/assets/style.css
+    packages/ui/dist/assets/Honk.ttf
+    packages/ui/dist/assets/PixelifySans.ttf
 )
 juce_add_plugin(HYPERREAL
     COMPANY_NAME "HYPERREAL"

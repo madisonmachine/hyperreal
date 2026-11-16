@@ -20,6 +20,8 @@ export type Snapshot = {
   playbackFrame: number
   playbackSpeed: number
   masterGain: number
+  masterPeak: number
+  masterClip: boolean
   padLevel: number
   padMode: number
   chokeGroup: number
@@ -58,6 +60,7 @@ const demo: Snapshot = {
   durationSeconds: 0, sampleRate: 0, sourceFrames: 0, sampleRevision: 0,
   trimStart: 0, trimEnd: 0, fadeInFrames: 0, fadeOutFrames: 0,
   reverse: false, playbackFrame: -1, playbackSpeed: 0, masterGain: 1,
+  masterPeak: 0, masterClip: false,
   padLevel: 1, padMode: 0, chokeGroup: 0, muted: false, solo: false,
   clipboardReady: false, voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0,
   ampAttack: 0, ampDecay: 0, ampSustain: 1, ampRelease: 0,

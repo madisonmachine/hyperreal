@@ -14,7 +14,8 @@ const initial: Snapshot = {
   sampleRate: 0, sourceFrames: 0, sampleRevision: 0,
   trimStart: 0, trimEnd: 0, fadeInFrames: 0, fadeOutFrames: 0,
   reverse: false, playbackFrame: -1, playbackSpeed: 0,
-  masterGain: 1, padLevel: 1, padMode: 0, chokeGroup: 0,
+  masterGain: 1, masterPeak: 0, masterClip: false,
+  padLevel: 1, padMode: 0, chokeGroup: 0,
   muted: false, solo: false, clipboardReady: false,
   voiceLimit: 4, velocityCurve: 1, coarseTune: 0, fineTune: 0,
   ampAttack: 0, ampDecay: 0, ampSustain: 1, ampRelease: 0,
@@ -144,8 +145,19 @@ export default function App() {
         <span>MIDI {pad.midiNote}</span>
       </button>)}</section>
       <label className="master-fader"><span>MASTER<br/>GAIN</span>
-        <input type="range" min="0" max="1" step="0.01" value={snapshot.masterGain}
-          onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, masterGain:value })); void setMasterGain(value) }} />
+        <span className="master-fader-body">
+          <span className="master-leds" role="meter" aria-label="Master output peak"
+            aria-valuemin={0} aria-valuemax={1}
+            aria-valuenow={Math.min(1, snapshot.masterPeak)}
+            aria-valuetext={snapshot.masterClip ? 'CLIP' : `${Math.round(snapshot.masterPeak * 100)}% peak`}>
+            {[1, 0.707, 0.5, 0.32, 0.16, 0.08, 0.04, 0.02].map((threshold, index) =>
+              <span key={threshold} className={'master-led '+(index < 2 ? 'red ' : index < 4 ? 'amber ' : 'green ')
+                + ((snapshot.masterPeak >= threshold || (index === 0 && snapshot.masterClip)) ? 'is-lit ' : '')
+                + (index === 0 && snapshot.masterClip ? 'is-clipping' : '')} />)}
+          </span>
+          <input type="range" min="0" max="1" step="0.01" value={snapshot.masterGain}
+            onChange={event => { const value = Number(event.target.value); setSnapshot(current => ({ ...current, masterGain:value })); void setMasterGain(value) }} />
+        </span>
         <output>{Math.round(snapshot.masterGain * 100)}%</output>
       </label></div>
     {context && <>

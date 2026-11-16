@@ -79,7 +79,7 @@ export default function RotaryControl({ label, value, min, max, step, onChange,
     <svg viewBox="0 0 64 64" aria-hidden="true">
       <circle className="rotary-track" cx="32" cy="32" r="25" />
       <circle className="rotary-progress" cx="32" cy="32" r="25"
-        pathLength="100" strokeDasharray={`${position * 75} 100`} />
+        pathLength="100" style={{ strokeDasharray: `${position * 75} 100`, opacity: position > 0 ? 1 : 0 }} />
       <circle className="rotary-cap" cx="32" cy="32" r="20" />
       <line className="rotary-indicator" x1="32" y1="32" x2={markerX} y2={markerY} />
       <circle className="rotary-center" cx="32" cy="32" r="3" />

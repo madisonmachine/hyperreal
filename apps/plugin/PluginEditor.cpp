@@ -360,5 +360,13 @@ HyperrealAudioProcessorEditor::getResource (const juce::String& path)
         return juce::WebBrowserComponent::Resource {
             copyResource (BinaryData::style_css, BinaryData::style_cssSize), "text/css" };
 
+    if (path == "/assets/Honk.ttf")
+        return juce::WebBrowserComponent::Resource {
+            copyResource (BinaryData::Honk_ttf, BinaryData::Honk_ttfSize), "font/ttf" };
+
+    if (path == "/assets/PixelifySans.ttf")
+        return juce::WebBrowserComponent::Resource {
+            copyResource (BinaryData::PixelifySans_ttf, BinaryData::PixelifySans_ttfSize), "font/ttf" };
+
     return std::nullopt;
 }

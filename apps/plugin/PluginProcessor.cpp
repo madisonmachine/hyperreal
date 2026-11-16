@@ -89,6 +89,10 @@ void HyperrealAudioProcessor::prepareToPlay (double sampleRate, int)
     transportWasPlaying = false;
     smoothedMasterGain.reset (sampleRate, 0.01);
     smoothedMasterGain.setCurrentAndTargetValue (parameters.getRawParameterValue ("master.gain.v1")->load());
+    meterEnvelope = 0.0f;
+    clipHoldFrames = 0;
+    masterMeterPeak.store (0.0f, std::memory_order_relaxed);
+    masterMeterClip.store (false, std::memory_order_relaxed);
 }
 
 void HyperrealAudioProcessor::releaseResources() {}
@@ -164,11 +168,28 @@ void HyperrealAudioProcessor::processBlock (juce::AudioBuffer<float>& audio, juc
         }
     }
     smoothedMasterGain.setTargetValue (parameters.getRawParameterValue ("master.gain.v1")->load());
+    auto blockPeak = 0.0f;
     for (int frame = 0; frame < audio.getNumSamples(); ++frame)
     {
         const auto gain = smoothedMasterGain.getNextValue();
         for (int channel = 0; channel < audio.getNumChannels(); ++channel)
-            audio.getWritePointer (channel)[frame] *= gain;
+        {
+            auto& output = audio.getWritePointer (channel)[frame];
+            output *= gain;
+            if (std::isfinite (output))
+                blockPeak = std::max (blockPeak, std::abs (output));
+        }
+    }
+    if (framesInBlock > 0)
+    {
+        const auto rate = std::max (1000.0, currentSampleRate);
+        const auto decay = std::exp (-framesInBlock / (rate * 0.45));
+        meterEnvelope = std::max (blockPeak, static_cast<float> (meterEnvelope * decay));
+        clipHoldFrames = blockPeak >= 1.0f
+            ? static_cast<int> (rate * 0.65)
+            : std::max (0, clipHoldFrames - framesInBlock);
+        masterMeterPeak.store (meterEnvelope, std::memory_order_relaxed);
+        masterMeterClip.store (clipHoldFrames > 0, std::memory_order_relaxed);
     }
 }
 
@@ -184,6 +205,10 @@ juce::var HyperrealAudioProcessor::getSnapshot() const
     auto snapshot = engine.getSnapshot (selectedPad.load());
     snapshot.getDynamicObject()->setProperty (
         "masterGain", parameters.getRawParameterValue ("master.gain.v1")->load());
+    snapshot.getDynamicObject()->setProperty (
+        "masterPeak", masterMeterPeak.load (std::memory_order_relaxed));
+    snapshot.getDynamicObject()->setProperty (
+        "masterClip", masterMeterClip.load (std::memory_order_relaxed));
     const auto pad = selectedPad.load();
     snapshot.getDynamicObject()->setProperty ("padLevel", padLevelParameters[pad]->load());
     snapshot.getDynamicObject()->setProperty ("padMode", static_cast<int> (padModeParameters[pad]->load()));

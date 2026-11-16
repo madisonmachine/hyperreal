@@ -501,6 +501,34 @@ int main()
         std::cerr << "Migrated Phase 2 sample did not play\n";
         return 1;
     }
+    migrated.prepareToPlay (44100.0, 128);
+    auto* fullGain = new juce::DynamicObject();
+    fullGain->setProperty ("schemaVersion", 1);
+    fullGain->setProperty ("value", 1.0);
+    if (! migrated.setMasterGain (juce::var (fullGain)))
+        return 1;
+    midi.clear();
+    for (int voice = 0; voice < 4; ++voice)
+        midi.addEvent (juce::MidiMessage::noteOn (
+            1, 36, static_cast<juce::uint8> (127)), 0);
+    migrated.processBlock (audio, midi);
+    const auto clipSnapshot = migrated.getSnapshot();
+    if (static_cast<double> (clipSnapshot.getProperty ("masterPeak", 0.0)) < 1.0
+        || ! static_cast<bool> (clipSnapshot.getProperty ("masterClip", false)))
+    {
+        std::cerr << "Master meter missed a clipped output block\n";
+        return 1;
+    }
+    midi.clear();
+    for (int block = 0; block < 350; ++block)
+        migrated.processBlock (audio, midi);
+    const auto quietSnapshot = migrated.getSnapshot();
+    if (static_cast<bool> (quietSnapshot.getProperty ("masterClip", true))
+        || static_cast<double> (quietSnapshot.getProperty ("masterPeak", 1.0)) >= 0.5)
+    {
+        std::cerr << "Master meter did not release after silence\n";
+        return 1;
+    }
     HyperrealAudioProcessor phase3Migrated;
     phase3Migrated.setStateInformation (phase3State.getData(), static_cast<int> (phase3State.getSize()));
     if (phase3Migrated.getSnapshot().getProperty ("status", {}).toString() != "ready"
